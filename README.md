@@ -54,8 +54,9 @@ monitoring engine. Native .NET 8 / WPF, no services, no injection, everything st
 ## Run it
 
 **Download:** grab `PerfHud-<version>-win-x64.zip` from [Releases](../../releases), extract anywhere, run `PerfHud.exe`.
-It needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (x64); the
-`PerfHud-SelfContained` zip and the `setup.exe` installer (built by CI) work without it.
+It needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (x64). Alternatives:
+`PerfHud-<version>-setup.exe` (per-user installer, no admin; also needs the runtime) or
+`PerfHud-SelfContained-<version>-win-x64.zip` (no runtime needed, larger).
 
 On first launch the HUD appears in the top-left corner and the settings window opens. Afterwards PerfHud lives in
 the **system tray** (double-click = settings, right-click = menu).
