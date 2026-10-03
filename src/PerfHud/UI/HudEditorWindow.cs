@@ -21,6 +21,7 @@ namespace PerfHud.UI;
 /// Visual layout editor. Components live on a snapping grid and show live data.
 /// Drag to move, drag the corner to resize, drop new components from the palette.
 /// Keyboard: arrows move, Shift+arrows resize, Del delete, Ctrl+D duplicate, Ctrl+Z undo, PgUp/PgDn reorder.
+/// A layout can have floating panels (separate overlay windows placed anywhere); the canvas edits one panel at a time.
 /// </summary>
 public sealed class HudEditorWindow : Window
 {
@@ -35,6 +36,9 @@ public sealed class HudEditorWindow : Window
     private readonly TextBlock _readOnlyNote = Ui.Muted("", 12);
     private readonly ListBox _metricList = new() { Height = 260 };
     private readonly TextBox _search = new();
+    private readonly ComboBox _viewCombo = new() { Width = 220 };
+    /// <summary>Panel shown on the canvas ("" = main HUD).</summary>
+    private string _view = "";
     private readonly DispatcherTimer _live = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private readonly DispatcherTimer _redrawDebounce = new() { Interval = TimeSpan.FromMilliseconds(80) };
     private readonly Stack<List<HudComponent>> _undo = new();
@@ -136,7 +140,7 @@ public sealed class HudEditorWindow : Window
             btn.Content = sp;
             btn.ToolTip = TypeHelp(t);
             var type = t;
-            btn.Click += (_, _) => Add(type, 0, _layout.Rows);
+            btn.Click += (_, _) => Add(type, 0, ViewRows);
             Point? down = null;
             btn.PreviewMouseLeftButtonDown += (_, e) => down = e.GetPosition(btn);
             btn.PreviewMouseMove += (_, e) =>
@@ -168,20 +172,46 @@ public sealed class HudEditorWindow : Window
         root.Children.Add(right);
 
         // Canvas
+        var center = new DockPanel();
+        var viewBar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        viewBar.Children.Add(new TextBlock { Text = "Editing", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0), Foreground = Ui.Res("MutedBrush") });
+        _viewCombo.DisplayMemberPath = "Value";
+        _viewCombo.SelectedValuePath = "Key";
+        _viewCombo.SelectionChanged += (_, _) =>
+        {
+            if (_viewCombo.SelectedValue is string v && v != _view) { _view = v; _selected = null; Redraw(); ShowProperties(); }
+        };
+        viewBar.Children.Add(_viewCombo);
+        foreach (var b in new[]
+        {
+            Ui.Button("New floating panel", () => NewPanel(null), null, "plus"),
+            Ui.Button("Panel position", () => Select(null), null, "move"),
+        })
+        {
+            b.Margin = new Thickness(8, 0, 0, 0);
+            viewBar.Children.Add(b);
+        }
+        var viewHint = Ui.Muted("Floating panels are separate overlays you can put anywhere on screen — one metric each, or a group.", 11.5);
+        viewHint.Margin = new Thickness(12, 0, 0, 0);
+        viewHint.VerticalAlignment = VerticalAlignment.Center;
+        viewBar.Children.Add(viewHint);
+        DockPanel.SetDock(viewBar, Dock.Top);
+        center.Children.Add(viewBar);
         var canvasHost = new Border
         {
             Background = Ui.Res("CanvasBrush"),
             BorderBrush = Ui.Res("BorderStrongBrush"), BorderThickness = new Thickness(1),
             Child = new ScrollViewer { Content = _canvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(14) },
         };
-        root.Children.Add(canvasHost);
+        center.Children.Add(canvasHost);
+        root.Children.Add(center);
         return root;
     }
 
     /// <summary>Rebuilds the window chrome after an app-theme change, reusing the long-lived controls.</summary>
     private UIElement BuildShellFresh()
     {
-        foreach (FrameworkElement e in new FrameworkElement[] { _canvas, _props, _layoutCombo, _nameBox, _readOnlyNote, _metricList, _search })
+        foreach (FrameworkElement e in new FrameworkElement[] { _canvas, _props, _layoutCombo, _nameBox, _readOnlyNote, _metricList, _search, _viewCombo })
         {
             switch (e.Parent)
             {
@@ -226,7 +256,9 @@ public sealed class HudEditorWindow : Window
         _layout = editable ?? HudPresets.Resolve(name, S);
         _undo.Clear();
         _selected = null;
+        _view = "";
         RefreshLayoutCombo();
+        RefreshViewCombo();
         _nameBox.Text = _layout.Name;
         _nameBox.IsEnabled = _editable;
         _readOnlyNote.Text = _editable ? "" : "Built-in layout (read-only) — Duplicate it to customize.";
@@ -239,6 +271,121 @@ public sealed class HudEditorWindow : Window
         var names = HudPresets.AllNames(S);
         _layoutCombo.ItemsSource = names;
         _layoutCombo.SelectedItem = _layout?.Name;
+    }
+
+    // ── Panels ───────────────────────────────────────────
+
+    /// <summary>Panel a component is shown in on the canvas ("" = main HUD; unknown names fall back to main).</summary>
+    private string PanelOf(HudComponent c) => _layout.FindPanel(c.Panel)?.Name ?? "";
+
+    private IEnumerable<HudComponent> ViewComps => _layout.Components.Where(c => PanelOf(c).Equals(_view, StringComparison.OrdinalIgnoreCase));
+    private int ViewRows => ViewComps.Select(c => c.RowEnd).DefaultIfEmpty(0).Max();
+    private int ViewCols => ViewComps.Select(c => c.ColEnd).DefaultIfEmpty(1).Max();
+
+    private void RefreshViewCombo()
+    {
+        var items = new List<KeyValuePair<string, string>> { new("", "Main HUD") };
+        items.AddRange(_layout.Panels.Select(p => new KeyValuePair<string, string>(p.Name, $"Panel: {p.Name}{(p.Enabled ? "" : " (hidden)")}")));
+        if (_layout.FindPanel(_view) == null) _view = "";
+        _viewCombo.ItemsSource = items;
+        _viewCombo.SelectedValue = _view;
+    }
+
+    private HudPanel? NewPanel(HudComponent? moveHere)
+    {
+        if (!_editable) { _app.Hud.ShowInfo("Duplicate this built-in layout to edit it"); return null; }
+        int n = _layout.Panels.Count + 1;
+        string name;
+        do name = $"Panel {n++}"; while (_layout.FindPanel(name) != null);
+        // Stagger new panels down the right edge so they don't land on top of each other.
+        var panel = new HudPanel { Name = name, Corner = HudCorner.TopRight, OffsetX = 16, OffsetY = 16 + 90 * _layout.Panels.Count };
+        _layout.Panels.Add(panel);
+        if (moveHere != null) MoveToPanel(moveHere, name);
+        else { _view = name; _selected = null; RefreshViewCombo(); Redraw(); ShowProperties(); }
+        return panel;
+    }
+
+    private void MoveToPanel(HudComponent c, string panel)
+    {
+        if (!_editable || PanelOf(c).Equals(panel, StringComparison.OrdinalIgnoreCase)) return;
+        Mutate();
+        _view = panel;
+        c.Panel = panel;
+        c.Col = 0;
+        c.Row = ViewComps.Where(x => !ReferenceEquals(x, c)).Select(x => x.RowEnd).DefaultIfEmpty(0).Max();
+        Resolve(c);
+        _selected = c;
+        RefreshViewCombo();
+        Commit();
+    }
+
+    private void RenamePanel(HudPanel p, string newName)
+    {
+        newName = newName.Trim();
+        if (newName.Length == 0 || newName.Equals(p.Name, StringComparison.Ordinal)) return;
+        if (_layout.Panels.Any(x => !ReferenceEquals(x, p) && x.Name.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+        {
+            MessageBox.Show(this, "Another panel already has that name.", "PerfHud", MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowProperties();
+            return;
+        }
+        var old = p.Name;
+        foreach (var c in _layout.Components.Where(c => c.Panel.Equals(old, StringComparison.OrdinalIgnoreCase))) c.Panel = newName;
+        p.Name = newName;
+        if (_view.Equals(old, StringComparison.OrdinalIgnoreCase)) _view = newName;
+        RefreshViewCombo();
+        ShowProperties();
+    }
+
+    private void DeletePanel(HudPanel p)
+    {
+        if (MessageBox.Show(this, $"Delete panel '{p.Name}'? Its components move back to the main HUD.", "PerfHud", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        Mutate();
+        int row = _layout.Components.Where(c => PanelOf(c) == "").Select(c => c.RowEnd).DefaultIfEmpty(0).Max();
+        var moved = _layout.Components.Where(c => c.Panel.Equals(p.Name, StringComparison.OrdinalIgnoreCase)).OrderBy(c => c.Row).ToList();
+        int first = moved.Count > 0 ? moved.Min(c => c.Row) : 0;
+        foreach (var c in moved) { c.Panel = ""; c.Row = row + c.Row - first; }
+        _layout.Panels.Remove(p);
+        _view = "";
+        _selected = null;
+        RefreshViewCombo();
+        Commit();
+    }
+
+    private static List<(string, string)> MonitorItems(string firstLabel)
+    {
+        var list = new List<(string, string)> { ("", firstLabel), ("*active", "Follow the active window") };
+        int i = 1;
+        foreach (var m in Win32.GetMonitors()) list.Add((m.Device, $"Monitor {i++}: {m.Bounds.Width}×{m.Bounds.Height}{(m.Primary ? " (primary)" : "")}"));
+        return list;
+    }
+
+    private static string Split(string s) => System.Text.RegularExpressions.Regex.Replace(s, "(?<=[a-z])([A-Z])", " $1");
+
+    /// <summary>Screen placement and look of one floating panel (applies live to the overlay).</summary>
+    private UIElement PanelEditor(HudPanel p)
+    {
+        UIElement R(UIElement e) { if (e is FrameworkElement fe) fe.Margin = new Thickness(0, 8, 0, 0); return e; }
+        var panel = new StackPanel { IsEnabled = _editable };
+        var name = new TextBox { Text = p.Name, Width = 170 };
+        name.LostFocus += (_, _) => RenamePanel(p, name.Text);
+        name.KeyDown += (_, e) => { if (e.Key == Key.Enter) RenamePanel(p, name.Text); };
+        panel.Children.Add(R(Ui.Row("Name", null, name, 0)));
+        panel.Children.Add(R(Ui.Toggle("Show this panel", null, p, nameof(HudPanel.Enabled))));
+        panel.Children.Add(R(Ui.ComboMap("Anchor", "Custom = exact spot (drag it while unlocked)", p, nameof(HudPanel.Corner), Enum.GetValues<HudCorner>().Select(c => (c, Split(c.ToString()))), 170)));
+        panel.Children.Add(R(Ui.Number("Margin X", "From the anchored edge, px", p, nameof(HudPanel.OffsetX), 80, "0")));
+        panel.Children.Add(R(Ui.Number("Margin Y", null, p, nameof(HudPanel.OffsetY), 80, "0")));
+        panel.Children.Add(R(Ui.Number("Custom X", "Screen pixels (anchor = Custom)", p, nameof(HudPanel.CustomX), 80, "0")));
+        panel.Children.Add(R(Ui.Number("Custom Y", null, p, nameof(HudPanel.CustomY), 80, "0")));
+        panel.Children.Add(R(Ui.ComboMap("Monitor", null, p, nameof(HudPanel.Monitor), MonitorItems("Same as main HUD"), 170)));
+        panel.Children.Add(R(Ui.Slider("Scale", "× the HUD scale", p, nameof(HudPanel.Scale), 0.3, 3, 0.05, "{0:0.00}×")));
+        panel.Children.Add(R(Ui.Slider("Opacity", null, p, nameof(HudPanel.Opacity), 0.1, 1, 0.05, "{0:0%}")));
+        panel.Children.Add(R(Ui.Toggle("Horizontal", "Lay this panel out as a strip", p, nameof(HudPanel.Horizontal))));
+        panel.Children.Add(R(Ui.Toggle("Background", "Off = bare values floating on screen", p, nameof(HudPanel.ShowBackground))));
+        panel.Children.Add(R(Ui.Buttons(
+            Ui.Button("Edit its components", () => { _view = p.Name; _selected = null; RefreshViewCombo(); Redraw(); ShowProperties(); }, null, "grid"),
+            Ui.Button("Delete panel", () => DeletePanel(p), "DangerButton", "trash"))));
+        return panel;
     }
 
     private void NewLayout()
@@ -323,7 +470,7 @@ public sealed class HudEditorWindow : Window
     {
         if (!_editable) { _app.Hud.ShowInfo("Duplicate this built-in layout to edit it"); return; }
         Mutate();
-        var c = new HudComponent { Type = t, Col = col, Row = row };
+        var c = new HudComponent { Type = t, Col = col, Row = row, Panel = _view };
         switch (t)
         {
             case ComponentType.Number: c.MetricId = SelectedMetric("cpu.usage"); break;
@@ -348,6 +495,7 @@ public sealed class HudEditorWindow : Window
             case ComponentType.Trend: c.MetricId = Graphable(SelectedMetric("cpu.usage")); c.ColSpan = 2; break;
             case ComponentType.Stats: c.MetricId = Graphable(SelectedMetric("fps.current")); c.ColSpan = 2; break;
             case ComponentType.Template: c.Text = "CPU {cpu.usage} {cpu.temp}   GPU {gpu.usage} {gpu.temp}"; c.ColSpan = 2; break;
+            case ComponentType.Media: c.MetricId = "media.title"; c.ColSpan = 2; c.Height = 46; c.ShowWhen = ShowCondition.WhenAvailable; break;
         }
         _layout.Components.Add(c);
         Resolve(c);
@@ -400,7 +548,7 @@ public sealed class HudEditorWindow : Window
             var a = queue.Dequeue();
             foreach (var b in _layout.Components.ToList())
             {
-                if (ReferenceEquals(a, b) || !Overlaps(a, b)) continue;
+                if (ReferenceEquals(a, b) || !Overlaps(a, b) || !PanelOf(a).Equals(PanelOf(b), StringComparison.OrdinalIgnoreCase)) continue;
                 b.Row = a.RowEnd;
                 queue.Enqueue(b);
             }
@@ -410,12 +558,13 @@ public sealed class HudEditorWindow : Window
     private void CompactRows()
     {
         if (!_editable) return;
-        int rows = _layout.Rows;
+        var comps = ViewComps.ToList();
+        int rows = ViewRows;
         for (int r = rows - 1; r >= 0; r--)
         {
-            bool used = _layout.Components.Any(c => c.Row <= r && r < c.RowEnd);
+            bool used = comps.Any(c => c.Row <= r && r < c.RowEnd);
             if (used) continue;
-            foreach (var c in _layout.Components.Where(c => c.Row > r)) c.Row--;
+            foreach (var c in comps.Where(c => c.Row > r)) c.Row--;
         }
         Commit();
     }
@@ -428,7 +577,7 @@ public sealed class HudEditorWindow : Window
     {
         _canvas.Children.Clear();
         _tiles.Clear();
-        int cols = Math.Max(_layout.Columns + 1, 4), rows = _layout.Rows + 3;
+        int cols = Math.Max(ViewCols + 1, 4), rows = ViewRows + 3;
         _canvas.Width = cols * CW;
         _canvas.Height = rows * CH;
 
@@ -445,7 +594,9 @@ public sealed class HudEditorWindow : Window
 
         var style = HudStyle.From(S, false, false);
         _ctx = new HudRenderContext { Store = _app.Store, Settings = S, Style = style, Fps = _app.Fps, Now = MetricSeries.Now };
-        foreach (var comp in _layout.Components) AddTile(comp, style);
+        var panel = _layout.FindPanel(_view);
+        if (panel is { ShowBackground: false }) style = style.WithoutPanel();
+        foreach (var comp in ViewComps) AddTile(comp, style);
         RefreshTiles();
     }
 
@@ -459,7 +610,8 @@ public sealed class HudEditorWindow : Window
         var grid = new Grid { ClipToBounds = true };
         if (el != null)
             grid.Children.Add(new Viewbox { Child = el, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false });
-        var badge = new TextBlock { Text = TypeName(comp.Type), FontSize = 9.5, Foreground = Ui.Res("MutedBrush"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 6, 0), Opacity = 0.8 };
+        var badgeText = TypeName(comp.Type) + (comp.ShowWhen != ShowCondition.Always ? " · " + ConditionName(comp.ShowWhen).ToLowerInvariant() : "");
+        var badge = new TextBlock { Text = badgeText, FontSize = 9.5, Foreground = Ui.Res("MutedBrush"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 6, 0), Opacity = 0.8 };
         grid.Children.Add(badge);
 
         var tile = new Border
@@ -633,9 +785,24 @@ public sealed class HudEditorWindow : Window
             var info = new StackPanel();
             info.Children.Add(Ui.H2("Properties"));
             info.Children.Add(Ui.Muted(_editable ? "Select a component to edit it, or add one from the palette." : "This built-in layout is read-only. Use Duplicate to create an editable copy.", 12));
-            var stats = Ui.Muted($"{_layout.Components.Count} components · {_layout.Columns} columns × {_layout.Rows} rows", 11.5);
+            var view = _layout.FindPanel(_view);
+            var stats = Ui.Muted($"{ViewComps.Count()} components here · {_layout.Components.Count} in the layout · {_layout.Panels.Count} floating panel(s)", 11.5);
             stats.Margin = new Thickness(0, 10, 0, 0);
             info.Children.Add(stats);
+            if (view != null)
+            {
+                var h = Ui.H2($"Panel: {view.Name}");
+                h.Margin = new Thickness(0, 18, 0, 0);
+                info.Children.Add(h);
+                info.Children.Add(PanelEditor(view));
+            }
+            else
+            {
+                var h = Ui.H2("Main HUD position");
+                h.Margin = new Thickness(0, 18, 0, 0);
+                info.Children.Add(h);
+                info.Children.Add(Ui.Muted("The main HUD's anchor, margins and monitor are under Settings → HUD layout. Floating panels each have their own — pick one above.", 11.5));
+            }
             _props.Content = info;
             return;
         }
@@ -665,7 +832,7 @@ public sealed class HudEditorWindow : Window
         Grid Small(Grid row) { if (row.Children.Count > 1 && row.Children[1] is FrameworkElement f && f is not CheckBox && f.Width > 150) f.Width = 170; return row; }
 
         panel.Children.Add(R(Small(Ui.ComboMap("Type", null, c, nameof(HudComponent.Type), Enum.GetValues<ComponentType>().Select(t => (t, TypeName(t))), 170))));
-        bool usesMetric = c.Type is not (ComponentType.Text or ComponentType.Template or ComponentType.Divider or ComponentType.Spacer or ComponentType.Icon or ComponentType.CoreGrid or ComponentType.SensorList or ComponentType.DriveList or ComponentType.FrameTimeGraph);
+        bool usesMetric = c.Type is not (ComponentType.Text or ComponentType.Template or ComponentType.Divider or ComponentType.Spacer or ComponentType.Icon or ComponentType.CoreGrid or ComponentType.SensorList or ComponentType.DriveList or ComponentType.FrameTimeGraph or ComponentType.Media);
         if (usesMetric)
         {
             panel.Children.Add(R(Small(Ui.ComboMap("Metric", null, c, nameof(HudComponent.MetricId), metricItems, 170))));
@@ -693,17 +860,41 @@ public sealed class HudEditorWindow : Window
         panel.Children.Add(R(Small(Ui.Text("Label", "Empty = automatic", c, nameof(HudComponent.Label), 170))));
         panel.Children.Add(R(Small(Ui.ComboMap("Icon", null, c, nameof(HudComponent.Icon), iconItems, 170))));
 
-        var colorRow = Ui.Color("Color", c, nameof(HudComponent.Color));
+        panel.Children.Add(R(Ui.H2("Look")));
+        var colorRow = Ui.Color("Value color", c, nameof(HudComponent.Color));
         panel.Children.Add(R(colorRow));
         panel.Children.Add(Ui.Muted("Empty = automatic severity colors", 11));
-        panel.Children.Add(R(Ui.Slider("Font size", null, c, nameof(HudComponent.FontScale), 0.6, 3, 0.05, "{0:0.00}×")));
-        if (c.Type is ComponentType.Graph or ComponentType.Trend or ComponentType.FrameTimeGraph or ComponentType.Gauge or ComponentType.Spacer or ComponentType.CoreGrid or ComponentType.Icon)
-            panel.Children.Add(R(Ui.Slider("Height", null, c, nameof(HudComponent.Height), 0, 160, 2, "{0:0} px")));
+        panel.Children.Add(R(Ui.Color("Label color", c, nameof(HudComponent.LabelColor))));
+        panel.Children.Add(R(Ui.Color("Background", c, nameof(HudComponent.Background))));
+        panel.Children.Add(Ui.Muted("e.g. #33FFFFFF for a faint highlight; empty = none", 11));
+        panel.Children.Add(R(Small(Ui.Text("Value font", "Empty = the HUD look's font", c, nameof(HudComponent.ValueFont), 170))));
+        panel.Children.Add(R(Ui.Slider("Font size", null, c, nameof(HudComponent.FontScale), 0.5, 4, 0.05, "{0:0.00}×")));
+        panel.Children.Add(R(Ui.Slider("Opacity", null, c, nameof(HudComponent.Opacity), 0.1, 1, 0.05, "{0:0%}")));
+        if (usesMetric || c.Type == ComponentType.Template)
+        {
+            panel.Children.Add(R(Small(Ui.ComboMap("Decimals", null, c, nameof(HudComponent.Decimals), new[] { (-1, "Automatic"), (0, "0"), (1, "1"), (2, "2"), (3, "3") }, 170))));
+            panel.Children.Add(R(Ui.Toggle("Hide unit", null, c, nameof(HudComponent.HideUnit))));
+        }
+        if (c.Type is ComponentType.Graph or ComponentType.Trend or ComponentType.FrameTimeGraph or ComponentType.Gauge or ComponentType.Spacer or ComponentType.CoreGrid or ComponentType.Icon or ComponentType.Media)
+            panel.Children.Add(R(Ui.Slider(c.Type == ComponentType.Media ? "Artwork size" : "Height", null, c, nameof(HudComponent.Height), 0, 160, 2, "{0:0} px")));
         panel.Children.Add(R(Ui.Slider("Min width", "0 = automatic", c, nameof(HudComponent.Width), 0, 400, 4, "{0:0} px")));
         if (c.IsGraph || c.Type is ComponentType.Trend or ComponentType.Stats)
             panel.Children.Add(R(Small(Ui.ComboMap("History window", null, c, nameof(HudComponent.GraphSeconds), new[] { (0, "Default"), (5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "60 s"), (300, "5 min") }, 170))));
 
         panel.Children.Add(R(Ui.H2("Placement")));
+        var showOn = new ComboBox { DisplayMemberPath = "Value", SelectedValuePath = "Key", Width = 170 };
+        var targets = new List<KeyValuePair<string, string>> { new("", "Main HUD") };
+        targets.AddRange(_layout.Panels.Select(p => new KeyValuePair<string, string>(p.Name, p.Name)));
+        targets.Add(new("\u0001new", "+ New floating panel"));
+        showOn.ItemsSource = targets;
+        showOn.SelectedValue = PanelOf(c);
+        showOn.SelectionChanged += (_, _) =>
+        {
+            if (showOn.SelectedValue is not string v) return;
+            if (v == "\u0001new") Dispatcher.BeginInvoke(() => NewPanel(c));
+            else Dispatcher.BeginInvoke(() => MoveToPanel(c, v));
+        };
+        panel.Children.Add(R(Ui.Row("Show on", "Floating panels sit anywhere on screen", showOn, 0)));
         var place = new UniformGrid { Columns = 4, Margin = new Thickness(0, 6, 0, 0) };
         foreach (var (lbl, path) in new[] { ("Col", nameof(HudComponent.Col)), ("Row", nameof(HudComponent.Row)), ("Width", nameof(HudComponent.ColSpan)), ("Height", nameof(HudComponent.RowSpan)) })
         {
@@ -717,14 +908,28 @@ public sealed class HudEditorWindow : Window
             place.Children.Add(sp);
         }
         panel.Children.Add(place);
+        panel.Children.Add(R(Ui.Segmented("Align", null, c, nameof(HudComponent.Align),
+            new[] { (CellAlign.Auto, "Auto"), (CellAlign.Left, "Left"), (CellAlign.Center, "Center"), (CellAlign.Right, "Right"), (CellAlign.Stretch, "Fill") })));
+        panel.Children.Add(R(Ui.Segmented("Vertical", null, c, nameof(HudComponent.VAlign),
+            new[] { (CellVAlign.Auto, "Auto"), (CellVAlign.Top, "Top"), (CellVAlign.Center, "Middle"), (CellVAlign.Bottom, "Bottom") })));
+        panel.Children.Add(R(Ui.Slider("Nudge X", "Fine offset, doesn't move neighbours", c, nameof(HudComponent.NudgeX), -100, 100, 1, "{0:0} px")));
+        panel.Children.Add(R(Ui.Slider("Nudge Y", null, c, nameof(HudComponent.NudgeY), -100, 100, 1, "{0:0} px")));
+
+        panel.Children.Add(R(Ui.H2("Visibility")));
+        panel.Children.Add(R(Small(Ui.ComboMap("Show", null, c, nameof(HudComponent.ShowWhen), Enum.GetValues<ShowCondition>().Select(x => (x, ConditionName(x))), 170))));
         panel.Children.Add(R(Ui.Toggle("Hide in compact mode", null, c, nameof(HudComponent.DetailOnly))));
         panel.Children.Add(R(Ui.Toggle("Show label", null, c, nameof(HudComponent.ShowLabel))));
-        panel.Children.Add(R(Ui.Toggle("Show icon", null, c, nameof(HudComponent.ShowIcon))));
+        panel.Children.Add(R(Ui.Toggle(c.Type == ComponentType.Media ? "Show artwork" : "Show icon", null, c, nameof(HudComponent.ShowIcon))));
         panel.Children.Add(R(Ui.Buttons(
             Ui.Button("Duplicate", DuplicateSelected, null, "copy"),
             Ui.Button("Delete", DeleteSelected, "DangerButton", "trash"),
             Ui.Button("", () => Reorder(-1), null, "arrowup"),
             Ui.Button("", () => Reorder(1), null, "arrowdown"))));
+        if (_layout.FindPanel(c.Panel) is { } own)
+        {
+            panel.Children.Add(R(Ui.H2($"Panel: {own.Name}")));
+            panel.Children.Add(PanelEditor(own));
+        }
         _props.Content = panel;
     }
 
@@ -757,7 +962,20 @@ public sealed class HudEditorWindow : Window
         ComponentType.Trend => "Value + trend",
         ComponentType.Stats => "Min / avg / max",
         ComponentType.Template => "Custom text",
+        ComponentType.Media => "Now playing",
         _ => t.ToString(),
+    };
+
+    public static string ConditionName(ShowCondition c) => c switch
+    {
+        ShowCondition.Always => "Always",
+        ShowCondition.WhenAvailable => "Only when it has a value",
+        ShowCondition.WhenWarning => "Only when warm / hot",
+        ShowCondition.OnBattery => "Only on battery",
+        ShowCondition.OnAC => "Only when plugged in",
+        ShowCondition.WhenMediaPlaying => "Only while media plays",
+        ShowCondition.WhenGameRunning => "Only while a game renders",
+        _ => c.ToString(),
     };
 
     private static string TypeIcon(ComponentType t) => t switch
@@ -779,6 +997,7 @@ public sealed class HudEditorWindow : Window
         ComponentType.Trend => "activity",
         ComponentType.Stats => "sliders",
         ComponentType.Template => "text",
+        ComponentType.Media => "music",
         _ => "activity",
     };
 
@@ -801,6 +1020,7 @@ public sealed class HudEditorWindow : Window
         ComponentType.Trend => "Value with a small inline sparkline beside it.",
         ComponentType.Stats => "Lowest, average and highest value over the history window.",
         ComponentType.Template => "Free text with live values: \"CPU {cpu.usage} · {cpu.temp}\".",
+        ComponentType.Media => "What's playing in Spotify, browsers, Media Player… with artwork and progress.",
         _ => "",
     };
 }

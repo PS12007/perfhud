@@ -40,17 +40,28 @@ monitoring engine. Native .NET 8 / WPF, no services, no injection, everything st
   storage (per drive space, read/write, activity, NVMe temperature), network (down/up, ping, adapter, link type & speed),
   **battery** (charge, state, time left/to full, health, design/full/remaining Wh, voltage, current, power draw, charge
   rate, cycles, temperature), laptop info (maker, model, BIOS, board, OS build, display, refresh, HDR, power plan,
-  Windows power mode, OEM performance mode).
+  Windows power mode, OEM performance mode), **media** (now playing title / artist / album / app with cover art,
+  play state, position, length, progress) and **audio** (output device, volume, mute, live output level).
 * **Temperature dashboard** – every accessible sensor, color coded cool → normal → warm → hot → critical with
   configurable thresholds, plus a ⚠ glyph and text tag so color is never the only cue.
 * **Graphs** – CPU/GPU load & temp, RAM, VRAM, network, disk, battery drain, FPS, frame time… with 5 s / 10 s / 30 s /
   60 s / 5 min windows. One `StreamGeometry` per graph, decimated per pixel.
-* **Presets** – Minimal, Gaming, Full, plus any number of your own layouts. Cycle with a hotkey.
+* **Presets** – Minimal, Gaming, Full, Split (floating panels demo), plus any number of your own layouts. Cycle with a hotkey.
+* **Put every item exactly where you want it** – a layout can have any number of **floating panels**: separate little
+  overlays, each with its own anchor (any corner/edge or an exact pixel position), margins, monitor, scale, opacity,
+  orientation and background on/off. Put FPS top-left, temps top-right and the current song bottom-right — or give
+  each metric its own panel. Unlock the HUD and drag any panel to pin it to that spot.
+* **Per-item control** – every component has its own alignment (left / center / right / fill, top / middle / bottom),
+  pixel nudge, opacity, value color, label color, cell background, value font, font size, decimal places, unit on/off,
+  and a **show condition**: always, only when it has a value, only when warm/hot, only on battery / plugged in, only
+  while media plays, or only while a game renders. Hidden items take no space.
 * **HUD editor** – drag-and-drop grid editor with live data: move, resize, duplicate, delete, reorder, undo.
   Components: Number, Big number, Percentage, Progress bar, Graph, Frame-time graph, Gauge, Text/header, Icon, Divider,
   Spacer, Per-core bars, Temperature list, Drive list, **Value + trend** (inline sparkline), **Min / avg / max** over
   the history window, and **Custom text** – free text with live values, e.g. `CPU {cpu.usage} · {cpu.temp}` (use
-  `{id:v}` for the bare number). Also a one-click **metric picker** for quick custom layouts.
+  `{id:v}` for the bare number), and **Now playing** (cover art, title, artist · app, progress bar).
+  The canvas edits one panel at a time; "Show on" moves a component into any floating panel.
+  Also a one-click **metric picker** for quick custom layouts.
 * **App profiles** – e.g. `Cyberpunk2077.exe → Gaming`, `chrome.exe → Minimal`, `Desktop → Hidden`; per profile:
   layout, position, opacity, scale, compact mode, auto-record. Reverts automatically when the app closes/loses focus.
 * **Session history** – auto-records when a full-screen game is detected (or manually / per profile): duration, avg
@@ -125,6 +136,8 @@ rebind them if that bothers you.
 | Display, refresh rate, HDR, monitor name | `QueryDisplayConfig` | no |
 | Power plan / Windows power mode | PowrProf (read-only) | no |
 | OEM performance profile (Lenovo Quiet/Balanced/Performance) | Lenovo GameZone WMI (read-only) | yes |
+| Now playing (title, artist, album, app, art, position) | Windows media session API (`GlobalSystemMediaTransportControlsSessionManager`) — Spotify, browsers, Media Player, … | no |
+| Volume, mute, output level, output device | Core Audio (`IAudioEndpointVolume`, `IAudioMeterInformation`) | no |
 | FPS / frame times | ETW present events (PresentMon technique) — see [docs/FPS.md](docs/FPS.md) | admin **or** *Performance Log Users* |
 
 Anything unavailable shows **N/A**, and Settings explains why (hover-free: Overview, Sensors and Diagnostics pages).

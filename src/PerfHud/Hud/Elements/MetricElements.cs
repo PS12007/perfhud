@@ -151,7 +151,7 @@ public sealed class BigNumberElement : HudElement
         SetFg(_warn, p.Brush);
         SetRun(_value, na ? "—" : p.Value);
         SetFg(_value, na ? S.Muted : (Def?.Kind == MetricKind.Fps && p.Severity == Severity.Normal ? (OverrideBrush ?? S.Text) : p.Brush));
-        SetRun(_unit, na || !S.ShowUnits ? "" : " " + S.Case(p.Unit));
+        SetRun(_unit, na || !S.ShowUnits || C.HideUnit ? "" : " " + S.Case(p.Unit));
         string sub = "";
         if (p.Second?.TrimStart('•', ' ') is { Length: > 0 } sec) sub = sec;
         else if (na && Def?.Group == "FPS")
@@ -381,7 +381,7 @@ public sealed class StatsElement : HudElement
         void Show(TextBlock tb, double v)
         {
             if (k == 0) { SetText(tb, MetricRegistry.NA); SetFg(tb, S.Muted); return; }
-            var (val, unit) = MetricRegistry.Format(Def, v, ctx.Settings);
+            var (val, unit) = Fmt(Def, v, ctx.Settings);
             SetText(tb, val + UnitText(unit));
             SetFg(tb, OverrideBrush ?? S.ForSeverity(MetricRegistry.Evaluate(Def, v, ctx.Settings)));
         }
@@ -443,7 +443,7 @@ public sealed class TemplateElement : HudElement
                 continue;
             }
             var v = ctx.Store.Get(def.Id);
-            var (val, unit) = MetricRegistry.Format(def, v, ctx.Settings);
+            var (val, unit) = Fmt(def, v, ctx.Settings);
             SetRun(run, bare || double.IsNaN(v) ? val : val + UnitText(unit));
             // Calm values read as plain text inside a sentence; only warm and above get colored.
             var sev = MetricRegistry.Evaluate(def, v, ctx.Settings);

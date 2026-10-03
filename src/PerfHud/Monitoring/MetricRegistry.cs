@@ -7,6 +7,8 @@ public enum MetricKind
 {
     Percent, Temperature, Fps, FrameTime, Power, ClockGHz, ClockMHz, MemoryGB, MemoryMB, DataRate,
     Latency, Voltage, Current, EnergyWh, Duration, Count, BatteryPercent, Frequency, Text, Generic,
+    /// <summary>Seconds shown as m:ss / h:mm:ss (media position).</summary>
+    TrackTime,
 }
 
 public enum TempCategory { None, Cpu, Gpu, Storage, Battery, Other }
@@ -129,6 +131,22 @@ public static class MetricRegistry
         new("sys.uptime", "Uptime", "UPTIME", MetricKind.Duration, "Laptop", Icon: "clock"),
         new("time.now", "Clock", "TIME", MetricKind.Text, "Laptop", Icon: "clock"),
 
+        // ── Media & audio ────────────────────────────────────
+        new("media.title", "Now Playing: Title", "TRACK", MetricKind.Text, "Media", Icon: "music"),
+        new("media.artist", "Now Playing: Artist", "ARTIST", MetricKind.Text, "Media", Icon: "music"),
+        new("media.album", "Now Playing: Album", "ALBUM", MetricKind.Text, "Media", Icon: "music"),
+        new("media.line", "Now Playing (Artist — Title)", "♪", MetricKind.Text, "Media", Icon: "music"),
+        new("media.app", "Media Source App", "SOURCE", MetricKind.Text, "Media", Icon: "music"),
+        new("media.status", "Playback State", "MEDIA", MetricKind.Text, "Media", Icon: "music"),
+        new("media.position", "Track Position", "POS", MetricKind.TrackTime, "Media", Icon: "clock"),
+        new("media.duration", "Track Length", "LENGTH", MetricKind.TrackTime, "Media", Icon: "clock"),
+        new("media.remaining", "Track Remaining", "LEFT", MetricKind.TrackTime, "Media", Icon: "clock"),
+        new("media.progress", "Track Progress", "PROGRESS", MetricKind.Percent, "Media", Icon: "music", Max: 100, NoSeverity: true),
+        new("audio.volume", "System Volume", "VOL", MetricKind.Percent, "Media", true, Icon: "volume", Max: 100, NoSeverity: true),
+        new("audio.muted", "Muted", "MUTE", MetricKind.Text, "Media", Icon: "volume"),
+        new("audio.peak", "Audio Level", "LEVEL", MetricKind.Percent, "Media", true, Icon: "volume", Max: 100, NoSeverity: true),
+        new("audio.device", "Audio Output Device", "OUTPUT", MetricKind.Text, "Media", Icon: "volume"),
+
         // ── PerfHud itself ───────────────────────────────────
         new("app.cpu", "PerfHud CPU", "HUD CPU", MetricKind.Percent, "PerfHud", true, Icon: "cpu", Max: 100, NoSeverity: true),
         new("app.mem", "PerfHud Memory", "HUD MEM", MetricKind.MemoryMB, "PerfHud", Icon: "ram"),
@@ -203,9 +221,38 @@ public static class MetricRegistry
             case MetricKind.Current: return (v.ToString("0.00", Inv), "A");
             case MetricKind.EnergyWh: return (v.ToString("0.0", Inv), "Wh");
             case MetricKind.Duration: return (FormatDuration(v), "");
+            case MetricKind.TrackTime: return (FormatTrackTime(v), "");
             case MetricKind.Count: return (v.ToString("0", Inv), "");
             case MetricKind.Frequency: return (v.ToString("0", Inv), "Hz");
             default: return (v.ToString(Math.Abs(v) < 10 ? "0.0#" : "0.#", Inv), d.Unit);
+        }
+    }
+
+    /// <summary>
+    /// The number <see cref="Format"/> displays, before rounding (e.g. bytes → GB, °C → °F). NaN for values that aren't
+    /// shown as a single number (durations, text).
+    /// </summary>
+    public static double DisplayNumber(MetricDefinition d, double v, AppSettings s)
+    {
+        if (double.IsNaN(v)) return double.NaN;
+        switch (d.Kind)
+        {
+            case MetricKind.Duration: case MetricKind.TrackTime: case MetricKind.Text: return double.NaN;
+            case MetricKind.Temperature: return s.General.TemperatureUnit == TemperatureUnit.Fahrenheit ? v * 9 / 5 + 32 : v;
+            case MetricKind.Power: return Math.Abs(v);
+            case MetricKind.ClockGHz: return v / 1000;
+            case MetricKind.MemoryGB: return v / (1024d * 1024 * 1024);
+            case MetricKind.MemoryMB: return v / (1024d * 1024);
+            case MetricKind.DataRate:
+                {
+                    if (d.Group == "Network" && s.General.NetworkUnit == NetworkUnit.Bits)
+                    {
+                        double b = v * 8;
+                        return b < 1000 ? b : b < 1e6 ? b / 1e3 : b < 1e9 ? b / 1e6 : b / 1e9;
+                    }
+                    return v < 1024 ? v : v < 1024 * 1024 ? v / 1024 : v < 1024d * 1024 * 1024 ? v / 1024 / 1024 : v / 1024 / 1024 / 1024;
+                }
+            default: return v;
         }
     }
 
@@ -226,6 +273,13 @@ public static class MetricRegistry
         if (bitsPerSec < 1e6) return ((bitsPerSec / 1e3).ToString("0", Inv), "Kb/s");
         if (bitsPerSec < 1e9) return ((bitsPerSec / 1e6).ToString("0.0", Inv), "Mb/s");
         return ((bitsPerSec / 1e9).ToString("0.00", Inv), "Gb/s");
+    }
+
+    public static string FormatTrackTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || seconds < 0) return NA;
+        var t = TimeSpan.FromSeconds(Math.Floor(seconds));
+        return t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes}:{t.Seconds:00}";
     }
 
     public static string FormatDuration(double seconds)

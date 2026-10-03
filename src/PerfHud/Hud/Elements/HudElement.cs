@@ -17,6 +17,7 @@ public sealed class HudRenderContext
     public FpsMonitor? Fps { get; init; }
     public double Now { get; set; }
     public bool Paused { get; set; }
+    public bool OnBattery { get; set; }
 }
 
 /// <summary>Base class for HUD cells. Builds its visual tree once; <see cref="Refresh"/> only updates changed text/brushes.</summary>
@@ -37,6 +38,49 @@ public abstract class HudElement : Border
         if (c.Width > 0) MinWidth = c.Width;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
+
+        HorizontalAlignment = c.Align switch
+        {
+            CellAlign.Left => HorizontalAlignment.Left,
+            CellAlign.Center => HorizontalAlignment.Center,
+            CellAlign.Right => HorizontalAlignment.Right,
+            _ => HorizontalAlignment.Stretch,
+        };
+        VerticalAlignment = c.VAlign switch
+        {
+            CellVAlign.Top => VerticalAlignment.Top,
+            CellVAlign.Center => VerticalAlignment.Center,
+            CellVAlign.Bottom => VerticalAlignment.Bottom,
+            _ => VerticalAlignment.Stretch,
+        };
+        if (c.NudgeX != 0 || c.NudgeY != 0) RenderTransform = new TranslateTransform(c.NudgeX, c.NudgeY);
+        if (c.Opacity < 1) Opacity = c.Opacity;
+        if (ColorUtil.IsValidHex(c.Background))
+        {
+            Background = ColorUtil.Brush(c.Background, Colors.Transparent);
+            CornerRadius = new CornerRadius(Math.Min(4, S.CornerRadius));
+        }
+    }
+
+    /// <summary>Evaluates <see cref="HudComponent.ShowWhen"/>; hidden components collapse and take no space.</summary>
+    public virtual bool IsShown(HudRenderContext ctx)
+    {
+        var st = ctx.Store;
+        switch (C.ShowWhen)
+        {
+            case ShowCondition.WhenAvailable:
+                if (Def == null) return true;
+                return Def.IsText ? !string.IsNullOrEmpty(st.GetText(Def.Id)) : !double.IsNaN(st.Get(Def.Id));
+            case ShowCondition.WhenWarning:
+                if (Def == null || Def.IsText) return false;
+                return MetricRegistry.Evaluate(Def, st.Get(Def.Id), ctx.Settings) >= Severity.Warm
+                       || (Def2 is { IsText: false } && MetricRegistry.Evaluate(Def2, st.Get(Def2.Id), ctx.Settings) >= Severity.Warm);
+            case ShowCondition.OnBattery: return ctx.OnBattery;
+            case ShowCondition.OnAC: return !ctx.OnBattery;
+            case ShowCondition.WhenMediaPlaying: return st.GetText("media.status") == "Playing";
+            case ShowCondition.WhenGameRunning: return !double.IsNaN(st.Get("fps.current"));
+            default: return true;
+        }
     }
 
     public HudComponent Component => C;
@@ -49,6 +93,8 @@ public abstract class HudElement : Border
     protected string? IconName => !string.IsNullOrEmpty(C.Icon) ? C.Icon : Def?.Icon;
     protected bool ShowIcon => S.ShowIcons && C.ShowIcon && !string.IsNullOrEmpty(IconName);
     protected bool ShowLabel => S.ShowLabels && C.ShowLabel;
+    protected Brush LabelBrush => ColorUtil.IsValidHex(C.LabelColor) ? ColorUtil.Brush(C.LabelColor, Colors.Gray) : S.Muted;
+    protected FontFamily ValueFont => string.IsNullOrWhiteSpace(C.ValueFont) ? S.ValueFont : new FontFamily($"{C.ValueFont}, {S.ValueFont.Source}");
 
     protected SolidColorBrush? OverrideBrush => string.IsNullOrEmpty(C.Color) ? null : ColorUtil.Brush(C.Color, Colors.White);
 
@@ -58,14 +104,14 @@ public abstract class HudElement : Border
         FontFamily = S.LabelFont,
         FontSize = S.LabelSize * Fs,
         FontWeight = S.LabelWeight,
-        Foreground = brush ?? S.Muted,
+        Foreground = brush ?? LabelBrush,
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
 
     protected TextBlock MakeValueBlock(double size) => new()
     {
-        FontFamily = S.ValueFont,
+        FontFamily = ValueFont,
         FontSize = size,
         FontWeight = S.ValueWeight,
         Foreground = S.Text,
@@ -85,7 +131,7 @@ public abstract class HudElement : Border
     /// <summary>Unit text with a leading space where it reads better ("12.4 GB" but "38%" / "62°C"); empty when units are hidden.</summary>
     protected string UnitText(string? unit)
     {
-        if (!S.ShowUnits || string.IsNullOrEmpty(unit)) return "";
+        if (!S.ShowUnits || C.HideUnit || string.IsNullOrEmpty(unit)) return "";
         return unit == "%" || unit.StartsWith('°') ? unit : " " + unit;
     }
 
@@ -99,12 +145,27 @@ public abstract class HudElement : Border
     protected static void SetFg(TextBlock e, Brush b) { if (!ReferenceEquals(e.Foreground, b)) e.Foreground = b; }
     protected static void SetText(TextBlock t, string s) { if (t.Text != s) t.Text = s; }
 
-    protected HorizontalAlignment ValueAlign => S.Align switch
+    protected HorizontalAlignment ValueAlign => C.Align switch
     {
-        HudAlignment.Right => HorizontalAlignment.Right,
-        HudAlignment.Center => HorizontalAlignment.Center,
-        _ => HorizontalAlignment.Left,
+        CellAlign.Left => HorizontalAlignment.Left,
+        CellAlign.Center => HorizontalAlignment.Center,
+        CellAlign.Right => HorizontalAlignment.Right,
+        _ => S.Align switch
+        {
+            HudAlignment.Right => HorizontalAlignment.Right,
+            HudAlignment.Center => HorizontalAlignment.Center,
+            _ => HorizontalAlignment.Left,
+        },
     };
+
+    /// <summary><see cref="MetricRegistry.Format"/> plus the component's decimal-places override.</summary>
+    protected (string value, string unit) Fmt(MetricDefinition d, double v, AppSettings s)
+    {
+        var (val, unit) = MetricRegistry.Format(d, v, s);
+        if (C.Decimals >= 0 && MetricRegistry.DisplayNumber(d, v, s) is var n && !double.IsNaN(n))
+            val = n.ToString("F" + C.Decimals, System.Globalization.CultureInfo.InvariantCulture);
+        return (val, unit);
+    }
 
     /// <summary>Formatted primary value with severity, unit and optional secondary part.</summary>
     protected ValueParts Compose(HudRenderContext ctx)
@@ -122,7 +183,7 @@ public abstract class HudElement : Border
         else
         {
             var v = store.Get(Def.Id);
-            (p.Value, p.Unit) = MetricRegistry.Format(Def, v, ctx.Settings);
+            (p.Value, p.Unit) = Fmt(Def, v, ctx.Settings);
             p.Severity = MetricRegistry.Evaluate(Def, v, ctx.Settings);
             p.Brush = double.IsNaN(v) ? S.Muted : OverrideBrush ?? S.ForSeverity(p.Severity);
             p.Raw = v;
@@ -142,13 +203,13 @@ public abstract class HudElement : Border
                 var v2 = store.Get(Def2.Id);
                 if (C.Ratio && !double.IsNaN(v2) && !double.IsNaN(p.Raw))
                 {
-                    var (sv, su) = MetricRegistry.Format(Def2, v2, ctx.Settings);
+                    var (sv, su) = Fmt(Def2, v2, ctx.Settings);
                     p.Value = $"{p.Value}/{sv}";
                     p.Unit = su;
                 }
                 else if (!C.Ratio)
                 {
-                    var (sv, su) = MetricRegistry.Format(Def2, v2, ctx.Settings);
+                    var (sv, su) = Fmt(Def2, v2, ctx.Settings);
                     var sev2 = MetricRegistry.Evaluate(Def2, v2, ctx.Settings);
                     p.Second = sv;
                     p.SecondUnit = su;

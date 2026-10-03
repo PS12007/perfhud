@@ -71,6 +71,18 @@ public sealed class HudStyle
         _ => s,
     };
 
+    /// <summary>Copy with no panel behind the values (floating panels with the background turned off).</summary>
+    public HudStyle WithoutPanel()
+    {
+        var c = (HudStyle)MemberwiseClone();
+        var bg = Background.Color;
+        c.Background = ColorUtil.Brush(Color.FromRgb(bg.R, bg.G, bg.B), 0.004); // ~0 keeps it hit-testable for dragging
+        c.PanelBorder = ColorUtil.Brush(Colors.Transparent);
+        c.PanelStyle = PanelStyle.Bare;
+        c.PanelEdge = PanelEdge.None;
+        return c;
+    }
+
     public static FontWeight Weight(WeightOption w) => w switch
     {
         WeightOption.Light => FontWeights.Light,

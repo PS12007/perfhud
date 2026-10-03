@@ -152,7 +152,30 @@ public sealed partial class SettingsWindow
                 Ui.Slider("HUD refresh interval", "How often values on the HUD update", g, nameof(GeneralSettings.HudRefreshMs), 100, 2000, 50, "{0:0} ms"),
                 Ui.ComboMap("Temperature unit", null, g, nameof(GeneralSettings.TemperatureUnit), new[] { (TemperatureUnit.Celsius, "Celsius (°C)"), (TemperatureUnit.Fahrenheit, "Fahrenheit (°F)") }),
                 Ui.ComboMap("Network speed unit", null, g, nameof(GeneralSettings.NetworkUnit), new[] { (NetworkUnit.Bytes, "Bytes (MB/s)"), (NetworkUnit.Bits, "Bits (Mb/s)") }),
-                Ui.ComboMap("Language", "More languages can be added via the string catalog", g, nameof(GeneralSettings.Language), new[] { ("en", "English") })));
+                Ui.ComboMap("Language", "More languages can be added via the string catalog", g, nameof(GeneralSettings.Language), new[] { ("en", "English") })),
+            MediaCard());
+    }
+
+    private UIElement MediaCard()
+    {
+        var m = S.Media;
+        var st = _app.Store;
+        var now = Ui.Muted("", 11.5);
+        Live(() =>
+        {
+            var line = st.GetText("media.line");
+            var vol = st.Get("audio.volume");
+            var volText = double.IsNaN(vol) ? "" : $" · volume {vol:0}%{(st.GetText("audio.muted") == "Muted" ? " (muted)" : "")}";
+            now.Text = !string.IsNullOrEmpty(line)
+                ? $"{st.GetText("media.status")}: {line} — {st.GetText("media.app")}{volText}"
+                : (st.GetReason("media.progress") ?? "Nothing is playing") + volText;
+        });
+        return Ui.Card("Media", "Reads what's playing from Windows' media controls (Spotify, browsers, Media Player…) and the output volume. Add it in the HUD editor with the \"Now playing\" component or the Media metrics.",
+            Ui.Toggle("Track media & audio", null, m, nameof(MediaSettings.Enabled)),
+            Ui.Toggle("Prefer the app that's playing", "When several apps have media open, follow the one actually playing", m, nameof(MediaSettings.PreferPlaying)),
+            Ui.Toggle("Show cover art", null, m, nameof(MediaSettings.ShowArtwork)),
+            Ui.Text("Only follow these apps", "Comma-separated, e.g. Spotify, Chrome. Empty = any app", m, nameof(MediaSettings.AppFilter)),
+            now);
     }
 
     // ── Hotkeys ─────────────────────────────────────────

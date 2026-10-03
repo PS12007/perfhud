@@ -209,7 +209,7 @@ public sealed class IconElement : HudElement
     {
         var size = (C.Height > 0 ? C.Height : 20) * Fs;
         Child = Icons.Create(string.IsNullOrEmpty(C.Icon) ? Def?.Icon ?? "activity" : C.Icon, OverrideBrush ?? S.Accent, size);
-        HorizontalAlignment = HorizontalAlignment.Center;
+        if (C.Align == CellAlign.Auto) HorizontalAlignment = HorizontalAlignment.Center;
     }
     public override void Refresh(HudRenderContext ctx) { }
 }
@@ -254,6 +254,7 @@ public static class HudElementFactory
         ComponentType.Trend => new TrendElement(c, s),
         ComponentType.Stats => new StatsElement(c, s),
         ComponentType.Template => new TemplateElement(c, s),
+        ComponentType.Media => new MediaElement(c, s),
         _ => new HeaderElement(c, s),
     };
 
@@ -280,7 +281,7 @@ public static class HudElementFactory
             Grid.SetRow(e, transpose ? c.Col : c.Row);
             Grid.SetColumnSpan(e, transpose ? c.RowSpan : c.ColSpan);
             Grid.SetRowSpan(e, transpose ? c.ColSpan : c.RowSpan);
-            if (c.Type is ComponentType.SensorList or ComponentType.DriveList) e.VerticalAlignment = VerticalAlignment.Top;
+            if (c.Type is ComponentType.SensorList or ComponentType.DriveList && c.VAlign == CellVAlign.Auto) e.VerticalAlignment = VerticalAlignment.Top;
             grid.Children.Add(e);
             created.Add(e);
         }

@@ -29,6 +29,7 @@ public sealed class AppHost : IDisposable
     public FpsMonitor Fps { get; } = new();
     public SystemInfoMonitor SysInfo { get; } = new();
     public TemperatureMonitor Temps { get; } = new();
+    public MediaMonitor Media { get; } = new();
     public HudController Hud { get; private set; } = null!;
     public HotkeyManager Hotkeys { get; private set; } = null!;
     public TrayIcon Tray { get; private set; } = null!;
@@ -67,6 +68,12 @@ public sealed class AppHost : IDisposable
             if (prop == nameof(AppearanceSettings.AppTheme) || sender is AppSettings)
                 Application.Current?.Dispatcher.BeginInvoke(() => UI.UiTheme.Apply(Settings.Current.Appearance.AppTheme));
         };
+        Settings.Changed += (sender, _) =>
+        {
+            if (sender is not MediaSettings) return;
+            Monitoring.RequestReset<MediaMonitor>();
+            Monitoring.RequestReset<AudioMonitor>();
+        };
         Log.Info($"PerfHud {typeof(AppHost).Assembly.GetName().Version} starting (admin={Elevation.IsAdmin}, startup={fromStartup}, OS={Environment.OSVersion})");
 
         // ── Monitoring (each monitor isolated; order = first-run order) ──
@@ -81,6 +88,8 @@ public sealed class AppHost : IDisposable
         Monitoring.Add(SysInfo);
         Monitoring.Add(Temps);
         Monitoring.Add(new LatencyMonitor());
+        Monitoring.Add(Media);
+        Monitoring.Add(new AudioMonitor());
         Monitoring.Start();
 
         // ── UI services ──

@@ -6,10 +6,10 @@ namespace PerfHud.Hud;
 /// <summary>Built-in layouts. They're generated in code (always up to date) and can be copied into editable custom layouts.</summary>
 public static class HudPresets
 {
-    public const string MinimalName = "Minimal", GamingName = "Gaming", FullName = "Full", CustomName = "Custom";
+    public const string MinimalName = "Minimal", GamingName = "Gaming", FullName = "Full", SplitName = "Split", CustomName = "Custom";
     public const string HiddenToken = "(Hidden)";
 
-    public static readonly string[] BuiltInNames = { MinimalName, GamingName, FullName };
+    public static readonly string[] BuiltInNames = { MinimalName, GamingName, FullName, SplitName };
 
     private sealed class B
     {
@@ -25,7 +25,11 @@ public static class HudPresets
             Items.Add(c);
             return c;
         }
-        public HudLayout Build(string name, bool builtIn) => new() { Name = name, IsBuiltIn = builtIn, Components = new ObservableList<HudComponent>(Items) };
+        public readonly List<HudPanel> Panels = new();
+        public HudLayout Build(string name, bool builtIn) => new()
+        {
+            Name = name, IsBuiltIn = builtIn, Components = new ObservableList<HudComponent>(Items), Panels = new ObservableList<HudPanel>(Panels),
+        };
     }
 
     public static HudLayout Minimal()
@@ -71,6 +75,7 @@ public static class HudPresets
         b.Add(ComponentType.Number, "fps.low1", 2, r, label: "1% LOW");
         b.Add(ComponentType.Number, "fps.low01", 3, r++, label: "0.1% LOW");
         b.Add(ComponentType.FrameTimeGraph, "fps.frametime", 0, r++, 4, detail: true, height: 34);
+        b.Add(ComponentType.Media, "media.title", 0, r++, 4, height: 40).ShowWhen = ShowCondition.WhenAvailable;
 
         // CPU | GPU
         b.Add(ComponentType.Text, "", 0, r, 2, secondary: "cpu.name", text: "CPU", icon: "cpu");
@@ -140,6 +145,27 @@ public static class HudPresets
         return b.Build(FullName, true);
     }
 
+    /// <summary>Shows off floating panels: FPS top-left, system stats top-right, now playing bottom-right.</summary>
+    public static HudLayout Split()
+    {
+        using var quiet = Observable.Quiet();
+        var b = new B();
+        b.Add(ComponentType.BigNumber, "fps.current", 0, 0, secondary: "fps.app");
+        b.Add(ComponentType.Number, "fps.low1", 0, 1, label: "1% LOW");
+
+        b.Panels.Add(new HudPanel { Name = "Stats", Corner = HudCorner.TopRight });
+        b.Add(ComponentType.Number, "cpu.usage", 0, 0, secondary: "cpu.temp", label: "CPU").Panel = "Stats";
+        b.Add(ComponentType.Number, "gpu.usage", 0, 1, secondary: "gpu.temp", label: "GPU").Panel = "Stats";
+        b.Add(ComponentType.Number, "ram.used", 0, 2, secondary: "ram.total", label: "RAM", ratio: true).Panel = "Stats";
+        b.Add(ComponentType.Number, "bat.pct", 0, 3, secondary: "bat.power", label: "BAT").Panel = "Stats";
+
+        b.Panels.Add(new HudPanel { Name = "Music", Corner = HudCorner.BottomRight, OffsetY = 24 });
+        var media = b.Add(ComponentType.Media, "media.title", 0, 0, height: 46);
+        media.Panel = "Music";
+        media.ShowWhen = ShowCondition.WhenAvailable;
+        return b.Build(SplitName, true);
+    }
+
     public static HudLayout CreateDefaultCustom()
     {
         using var quiet = Observable.Quiet();
@@ -167,6 +193,7 @@ public static class HudPresets
             MinimalName => Minimal(),
             GamingName => Gaming(),
             FullName => Full(),
+            SplitName => Split(),
             _ => s.Layouts.FirstOrDefault(l => l.Name == name) ?? Gaming(),
         };
     }

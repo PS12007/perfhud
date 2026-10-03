@@ -35,6 +35,10 @@ public sealed class HudBuildSpec
     public bool RespectTaskbar { get; init; }
     public bool HideFromCapture { get; init; }
     public bool ClickThrough { get; init; }
+    /// <summary>A floating panel window: short badges, and it disappears entirely when it has nothing to show.</summary>
+    public bool Secondary { get; init; }
+    /// <summary>Main HUD whose components all live in floating panels: only banners/badges are shown.</summary>
+    public bool HideWhenEmpty { get; init; }
 }
 
 /// <summary>
@@ -57,6 +61,7 @@ public sealed class HudWindow : Window
     private IntPtr _hwnd;
     private HudBuildSpec? _spec;
     private bool _wantVisible;
+    private bool _contentEmpty;
 
     /// <summary>Raised after the user drags the HUD (unlocked mode): physical px relative to monitor, monitor device.</summary>
     public event Action<int, int, string>? UserMoved;
@@ -98,7 +103,7 @@ public sealed class HudWindow : Window
         _root.Children.Add(_panel);
         Content = _root;
 
-        _bannerTimer.Tick += (_, _) => { _bannerTimer.Stop(); _banner.Visibility = Visibility.Collapsed; };
+        _bannerTimer.Tick += (_, _) => { _bannerTimer.Stop(); _banner.Visibility = Visibility.Collapsed; UpdateChromeVisibility(); };
         _topmostTimer.Tick += (_, _) => AssertTopmost();
 
         SizeChanged += (_, _) => { UpdateRegion(); Reposition(); };
@@ -134,7 +139,8 @@ public sealed class HudWindow : Window
         if (spec.Compact) comps = Compactify(comps);
 
         var grid = HudElementFactory.BuildGrid(comps, st, spec.Transpose, _elements);
-        if (comps.Count == 0)
+        _contentEmpty = comps.Count == 0 && (spec.HideWhenEmpty || spec.Secondary);
+        if (comps.Count == 0 && !_contentEmpty)
         {
             grid.Children.Add(new TextBlock { Text = "Empty layout — open the HUD editor", Foreground = st.Muted, FontFamily = st.LabelFont, Margin = new Thickness(6) });
         }
@@ -149,8 +155,18 @@ public sealed class HudWindow : Window
         Opacity = Math.Clamp(spec.Opacity, 0.1, 1);
 
         if (_hwnd != IntPtr.Zero) ApplyWindowFlags(spec);
+        UpdateChromeVisibility();
         UpdateRegion();
         Dispatcher.BeginInvoke(Reposition, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Collapses the panel when there's nothing in it (all components hidden by their conditions, or none at all).</summary>
+    private void UpdateChromeVisibility()
+    {
+        _host.Visibility = _contentEmpty ? Visibility.Collapsed : Visibility.Visible;
+        bool any = !_contentEmpty || _banner.Visibility == Visibility.Visible || _badges.Visibility == Visibility.Visible;
+        var v = any ? Visibility.Visible : Visibility.Collapsed;
+        if (_panel.Visibility != v) _panel.Visibility = v;
     }
 
     /// <summary>In compact mode, packs the remaining components so hidden ones don't leave gaps.</summary>
@@ -203,16 +219,31 @@ public sealed class HudWindow : Window
         }
         if (recording) Badge("● REC", st.Critical);
         if (paused) Badge("❚❚ PAUSED", st.Warm);
-        if (!_spec.ClickThrough) Badge("UNLOCKED · drag to move · Ctrl+scroll to scale", st.Accent);
+        if (!_spec.ClickThrough) Badge(_spec.Secondary || _contentEmpty ? "UNLOCKED · drag" : "UNLOCKED · drag to move · Ctrl+scroll to scale", st.Accent);
         _badges.Visibility = _badges.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateChromeVisibility();
     }
 
     public void RefreshValues(HudRenderContext ctx)
     {
+        int shown = 0;
         foreach (var e in _elements)
         {
-            try { e.Refresh(ctx); }
+            try
+            {
+                bool show = e.IsShown(ctx);
+                var v = show ? Visibility.Visible : Visibility.Collapsed;
+                if (e.Visibility != v) e.Visibility = v;
+                if (!show) continue;
+                shown++;
+                e.Refresh(ctx);
+            }
             catch (Exception ex) { Log.Once($"refresh-{e.Component.Type}-{e.Component.MetricId}", LogLevel.Warn, $"HUD element refresh failed: {ex.Message}"); }
+        }
+        if (_spec != null && _elements.Count > 0)
+        {
+            bool empty = shown == 0;
+            if (empty != _contentEmpty) { _contentEmpty = empty; UpdateChromeVisibility(); }
         }
     }
 
@@ -225,6 +256,7 @@ public sealed class HudWindow : Window
         _banner.BorderBrush = b;
         _banner.Background = ColorUtil.Brush(((SolidColorBrush)b).Color, 0.12);
         _banner.Visibility = Visibility.Visible;
+        UpdateChromeVisibility();
         _bannerTimer.Stop();
         _bannerTimer.Interval = duration ?? TimeSpan.FromSeconds(6);
         _bannerTimer.Start();

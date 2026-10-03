@@ -23,6 +23,8 @@ public sealed class HudController : IDisposable
     private readonly SensorHub _hub;
     private readonly FpsMonitor? _fps;
     private readonly HudWindow _win = new();
+    /// <summary>Floating panel windows of the current layout, by panel name.</summary>
+    private readonly Dictionary<string, HudWindow> _panels = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _refresh = new(DispatcherPriority.Render);
     private readonly DispatcherTimer _rebuild = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(60) };
     private HudRenderContext? _ctx;
@@ -93,15 +95,25 @@ public sealed class HudController : IDisposable
         bool compact = p?.Compact ?? S.Hud.Compact;
         bool reduceAnim = _mon.Context.PowerSaving && S.Battery.ReduceAnimations;
         _style = HudStyle.From(S, compact, reduceAnim);
+        var layout = HudPresets.Resolve(EffectivePreset, S);
+        var panels = layout.Panels.Where(x => x.Enabled && !string.IsNullOrEmpty(x.Name)).ToList();
+        HudLayout Subset(IEnumerable<HudComponent> comps)
+        {
+            using var quiet = Observable.Quiet();
+            return new HudLayout { Name = layout.Name, Components = new ObservableList<HudComponent>(comps) };
+        }
+
+        double opacity = p?.Opacity ?? S.Appearance.Opacity, scale = p?.Scale ?? S.Appearance.Scale;
         var spec = new HudBuildSpec
         {
-            Layout = HudPresets.Resolve(EffectivePreset, S),
+            // Components of a disabled panel are hidden with it; unknown panel names fall back to the main HUD.
+            Layout = Subset(layout.Components.Where(c => layout.FindPanel(c.Panel) is null)),
             Style = _style,
             Transpose = S.Hud.Orientation == HudOrientation.Horizontal,
             Compact = compact,
             ShowGraphs = S.Hud.ShowGraphs,
-            Opacity = p?.Opacity ?? S.Appearance.Opacity,
-            Scale = p?.Scale ?? S.Appearance.Scale,
+            Opacity = opacity,
+            Scale = scale,
             Blur = S.Appearance.Blur,
             Shadow = S.Appearance.Shadow,
             Corner = p?.Corner ?? S.Hud.Corner,
@@ -113,9 +125,50 @@ public sealed class HudController : IDisposable
             RespectTaskbar = S.Hud.RespectTaskbar,
             HideFromCapture = S.Hud.HideFromCapture,
             ClickThrough = S.Hud.ClickThrough,
+            HideWhenEmpty = layout.Panels.Count > 0,
         };
         try { _win.Build(spec); }
         catch (Exception ex) { Log.Error("HUD build failed", ex); }
+
+        // Floating panels: one small overlay window each, positioned on its own.
+        foreach (var stale in _panels.Keys.Where(k => !panels.Any(x => x.Name.Equals(k, StringComparison.OrdinalIgnoreCase))).ToList())
+        {
+            _panels[stale].Close();
+            _panels.Remove(stale);
+        }
+        foreach (var panel in panels)
+        {
+            if (!_panels.TryGetValue(panel.Name, out var w))
+            {
+                w = CreatePanelWindow(panel.Name);
+                _panels[panel.Name] = w;
+            }
+            var pspec = new HudBuildSpec
+            {
+                Layout = Subset(layout.Components.Where(c => ReferenceEquals(layout.FindPanel(c.Panel), panel))),
+                Style = panel.ShowBackground ? _style : _style.WithoutPanel(),
+                Transpose = panel.Horizontal,
+                Compact = compact,
+                ShowGraphs = S.Hud.ShowGraphs,
+                Opacity = opacity * panel.Opacity,
+                Scale = scale * panel.Scale,
+                Blur = S.Appearance.Blur && panel.ShowBackground,
+                Shadow = S.Appearance.Shadow && panel.ShowBackground,
+                Corner = panel.Corner,
+                OffsetX = panel.OffsetX,
+                OffsetY = panel.OffsetY,
+                CustomX = panel.CustomX,
+                CustomY = panel.CustomY,
+                Monitor = string.IsNullOrEmpty(panel.Monitor) ? S.Hud.Monitor : panel.Monitor,
+                RespectTaskbar = S.Hud.RespectTaskbar,
+                HideFromCapture = S.Hud.HideFromCapture,
+                ClickThrough = S.Hud.ClickThrough,
+                Secondary = true,
+            };
+            try { w.Build(pspec); }
+            catch (Exception ex) { Log.Error($"HUD panel '{panel.Name}' build failed", ex); }
+        }
+
         _ctx = new HudRenderContext { Store = _store, Settings = S, Style = _style, Fps = _fps };
         _win.UpdateBadges(_mon.IsPaused, _recording);
 
@@ -126,17 +179,41 @@ public sealed class HudController : IDisposable
         StateChanged?.Invoke();
     }
 
+    private HudWindow CreatePanelWindow(string name)
+    {
+        var w = new HudWindow { Title = $"PerfHud Overlay - {name}" };
+        w.UserMoved += (x, y, dev) =>
+        {
+            // Dragging a panel (unlocked mode) pins it to that exact spot.
+            var panel = HudPresets.FindEditable(EffectivePreset, S)?.FindPanel(name);
+            if (panel == null) return;
+            panel.Monitor = dev;
+            panel.CustomX = x;
+            panel.CustomY = y;
+            panel.Corner = HudCorner.Custom;
+        };
+        w.UserScaled += d =>
+        {
+            var panel = HudPresets.FindEditable(EffectivePreset, S)?.FindPanel(name);
+            if (panel != null) panel.Scale = Math.Round(panel.Scale + d, 2);
+        };
+        new WindowInteropHelper(w).EnsureHandle();
+        return w;
+    }
+
+    private IEnumerable<HudWindow> AllWindows => _panels.Values.Prepend(_win);
+
     private void ApplyVisibility()
     {
         double fade = _style?.AnimMs ?? 0;
         if (IsHudVisible)
         {
-            _win.ShowHud(fade * 0.8);
+            foreach (var w in AllWindows) w.ShowHud(fade * 0.8);
             _refresh.Start();
         }
         else
         {
-            _win.HideHud(fade * 0.8);
+            foreach (var w in AllWindows) w.HideHud(fade * 0.8);
             _refresh.Stop();
         }
     }
@@ -146,14 +223,16 @@ public sealed class HudController : IDisposable
         if (_ctx == null) return;
         _ctx.Now = MetricSeries.Now;
         _ctx.Paused = _mon.IsPaused;
+        _ctx.OnBattery = _mon.Context.OnBattery;
         _store.SetText("time.now", DateTime.Now.ToString("HH:mm"));
-        if (_win.IsShownToUser) _win.RefreshValues(_ctx);
+        foreach (var w in AllWindows)
+            if (w.IsShownToUser) w.RefreshValues(_ctx);
         _hub.HudMonitorDevice = _win.CurrentMonitor?.Device;
 
         if (S.Hud.Monitor == "*active" && Environment.TickCount64 - _lastActiveMonitorCheck > 1500)
         {
             _lastActiveMonitorCheck = Environment.TickCount64;
-            _win.Reposition();
+            foreach (var w in AllWindows) w.Reposition();
         }
     }
 
@@ -239,12 +318,14 @@ public sealed class HudController : IDisposable
         RequestRebuild();
     }
 
-    public void OnDisplayChanged() => Application.Current?.Dispatcher.BeginInvoke(() => { _win.Reposition(); RequestRebuild(); });
+    public void OnDisplayChanged() => Application.Current?.Dispatcher.BeginInvoke(() => { foreach (var w in AllWindows) w.Reposition(); RequestRebuild(); });
 
     public void Dispose()
     {
         _refresh.Stop();
         _rebuild.Stop();
+        foreach (var w in _panels.Values) w.Close();
+        _panels.Clear();
         _win.Close();
     }
 }

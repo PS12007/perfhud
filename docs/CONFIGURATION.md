@@ -100,6 +100,7 @@ Settings → Diagnostics has **Export / Import / Reset everything**.
   },
   "history": { "autoRecord": "GamesDetected", "sampleIntervalSeconds": 1, "retentionDays": 90 },
   "privacy": { "showLocalIp": false, "showProcessNames": true },
+  "media": { "enabled": true, "preferPlaying": true, "showArtwork": true, "appFilter": "" /* e.g. "Spotify, Chrome" */ },
   "hotkeys": [ { "action": "ToggleHud", "gesture": "F9" } /* … */ ],
   "alerts": [
     { "enabled": true, "name": "GPU hot", "metricId": "gpu.temp", "op": "Above", "threshold": 85,
@@ -128,9 +129,40 @@ A layout is a grid. Each component has a type, a metric id and a position:
 ```
 
 Component types: `Number, BigNumber, Percentage, ProgressBar, Graph, FrameTimeGraph, Gauge, Text, Icon, Divider,
-Spacer, CoreGrid, SensorList, DriveList`. Optional fields: `label, text, icon, color ("#RRGGBB" or "" for automatic),
-fontScale, height, width, graphSeconds, detailOnly (hidden in compact mode), showLabel, showIcon, ratio`.
+Spacer, CoreGrid, SensorList, DriveList, Trend, Stats, Template, Media`. Optional fields: `label, text, icon,
+color ("#RRGGBB" or "" for automatic), fontScale, height, width, graphSeconds, detailOnly (hidden in compact mode),
+showLabel, showIcon, ratio`, plus:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `panel` | panel name, `""` | Floating panel the component lives in (`""` = main HUD) |
+| `align` / `vAlign` | `Auto, Left, Center, Right, Stretch` / `Auto, Top, Center, Bottom` | Placement inside its cell |
+| `nudgeX`, `nudgeY` | -400 … 400 | Pixel offset after layout (doesn't move neighbours) |
+| `opacity` | 0.1 … 1 | |
+| `showWhen` | `Always, WhenAvailable, WhenWarning, OnBattery, OnAC, WhenMediaPlaying, WhenGameRunning` | Hidden components take no space |
+| `decimals` | -1 (auto) … 3 | Decimal places for numbers |
+| `hideUnit` | bool | |
+| `labelColor`, `background` | `"#RRGGBB"`, `"#AARRGGBB"`, `""` | Label color and cell background |
+| `valueFont` | font family, `""` | Overrides the HUD look's value font |
+
+### Floating panels
+
+A layout's `panels` are extra overlay windows, each positioned independently:
+
+```jsonc
+"panels": [
+  { "name": "Music", "enabled": true, "corner": "BottomRight", "offsetX": 16, "offsetY": 24,
+    "customX": 200, "customY": 200,   // physical px from the monitor's top-left, used when corner = "Custom"
+    "monitor": "",                     // "" = same as the main HUD, "*active", or "\\.\DISPLAY2"
+    "scale": 1, "opacity": 1, "horizontal": false, "showBackground": true }
+]
+```
+
+Dragging a panel while the HUD is unlocked sets `corner` to `Custom` and stores the exact position. Components whose
+`panel` names a disabled panel are hidden with it; unknown names fall back to the main HUD.
 
 Metric ids are listed in Settings → Metric picker and in `src/PerfHud/Monitoring/MetricRegistry.cs`
 (e.g. `cpu.usage`, `cpu.temp`, `cpu.power`, `gpu.vram.used`, `bat.power`, `net.ping`, `sys.model`).
+Media: `media.title, media.artist, media.album, media.line, media.app, media.status, media.position, media.duration,
+media.remaining, media.progress, audio.volume, audio.muted, audio.peak, audio.device`.
 Per-drive metrics are dynamic: `disk.c.free`, `disk.d.temp`, `disk.c.read`, …

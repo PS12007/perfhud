@@ -18,6 +18,7 @@ public sealed class AppSettings : Observable
     public ProfileSettings Profiles { get; set; } = new();
     public HistorySettings History { get; set; } = new();
     public PrivacySettings Privacy { get; set; } = new();
+    public MediaSettings Media { get; set; } = new();
     public ObservableList<HotkeyBinding> Hotkeys { get; set; } = new();
     public ObservableList<AlertRule> Alerts { get; set; } = new();
 
@@ -361,6 +362,19 @@ public sealed class PrivacySettings : Observable
     public bool ShowLocalIp { get => _showIp; set => Set(ref _showIp, value); }
     /// <summary>Show the name of the app being measured next to FPS.</summary>
     public bool ShowProcessNames { get => _showProcess; set => Set(ref _showProcess, value); }
+}
+
+public sealed class MediaSettings : Observable
+{
+    private bool _enabled = true, _preferPlaying = true, _art = true;
+    private string _filter = "";
+    /// <summary>Read now-playing info from Windows' media controls and the output device's volume.</summary>
+    public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+    /// <summary>When several apps have media sessions, show the one that is actually playing.</summary>
+    public bool PreferPlaying { get => _preferPlaying; set => Set(ref _preferPlaying, value); }
+    public bool ShowArtwork { get => _art; set => Set(ref _art, value); }
+    /// <summary>Comma-separated app names to follow (e.g. "Spotify, Chrome"); "" = any app.</summary>
+    public string AppFilter { get => _filter; set => Set(ref _filter, value ?? ""); }
 }
 
 public sealed class AlertRule : Observable
