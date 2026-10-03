@@ -40,10 +40,10 @@ public sealed class ToastWindow : Window
         Content = new Border
         {
             Child = stack,
-            Background = ColorUtil.Brush(((SolidColorBrush)style.Background).Color, 0.94),
+            Background = ColorUtil.Brush(Color.FromRgb(style.Background.Color.R, style.Background.Color.G, style.Background.Color.B), 0.96),
             BorderBrush = accent,
             BorderThickness = new Thickness(3, 1, 1, 1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = new CornerRadius(Math.Min(8, style.CornerRadius)),
             Padding = new Thickness(12, 9, 14, 10),
             Margin = new Thickness(10),
             MinWidth = 260,

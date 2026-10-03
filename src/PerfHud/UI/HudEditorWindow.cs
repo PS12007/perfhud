@@ -52,8 +52,8 @@ public sealed class HudEditorWindow : Window
         Title = "PerfHud — HUD Editor";
         Width = 1320; Height = 840; MinWidth = 980; MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Ui.Res("BgBrush");
-        Foreground = Ui.Res("TextBrush");
+        SetResourceReference(BackgroundProperty, "BgBrush");
+        SetResourceReference(ForegroundProperty, "TextBrush");
         FontFamily = (FontFamily)Application.Current.Resources["UiFont"];
         UseLayoutRounding = true;
         Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/PerfHud;component/Assets/app.ico"));
@@ -67,6 +67,9 @@ public sealed class HudEditorWindow : Window
         _redrawDebounce.Tick += (_, _) => { _redrawDebounce.Stop(); Redraw(); };
         _live.Start();
         Closed += (_, _) => { _live.Stop(); _app.Settings.SaveNow(); };
+        Action themed = () => { UiTheme.StyleTitleBar(this); Content = BuildShellFresh(); };
+        UiTheme.Changed += themed;
+        Closed += (_, _) => UiTheme.Changed -= themed;
 
         LoadLayout(S.Hud.ActivePreset);
     }
@@ -74,7 +77,7 @@ public sealed class HudEditorWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        Win32.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
+        UiTheme.StyleTitleBar(this);
     }
 
     // ── Shell ────────────────────────────────────────────
@@ -128,7 +131,7 @@ public sealed class HudEditorWindow : Window
         {
             var btn = new Button { Margin = new Thickness(0, 0, 6, 6), Padding = new Thickness(8, 7, 8, 7), HorizontalContentAlignment = HorizontalAlignment.Left };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(Icons.Create(TypeIcon(t), Ui.Res("AccentBrush"), 14));
+            sp.Children.Add(Icons.Create(TypeIcon(t), Ui.Res("MutedBrush"), 14));
             sp.Children.Add(new TextBlock { Text = TypeName(t), Margin = new Thickness(7, 0, 0, 0), FontSize = 12 });
             btn.Content = sp;
             btn.ToolTip = TypeHelp(t);
@@ -167,12 +170,30 @@ public sealed class HudEditorWindow : Window
         // Canvas
         var canvasHost = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x08, 0x0A, 0x0E)),
-            BorderBrush = Ui.Res("BorderBrush"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10),
+            Background = Ui.Res("CanvasBrush"),
+            BorderBrush = Ui.Res("BorderStrongBrush"), BorderThickness = new Thickness(1),
             Child = new ScrollViewer { Content = _canvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(14) },
         };
         root.Children.Add(canvasHost);
         return root;
+    }
+
+    /// <summary>Rebuilds the window chrome after an app-theme change, reusing the long-lived controls.</summary>
+    private UIElement BuildShellFresh()
+    {
+        foreach (FrameworkElement e in new FrameworkElement[] { _canvas, _props, _layoutCombo, _nameBox, _readOnlyNote, _metricList, _search })
+        {
+            switch (e.Parent)
+            {
+                case Panel p: p.Children.Remove(e); break;
+                case ContentControl cc: cc.Content = null; break;
+                case Decorator d: d.Child = null; break;
+            }
+        }
+        var shell = BuildShell();
+        Redraw();
+        ShowProperties();
+        return shell;
     }
 
     private void FillMetricList()
@@ -191,6 +212,8 @@ public sealed class HudEditorWindow : Window
             if (d.Id == prev) _metricList.SelectedItem = item;
         }
     }
+
+    private static string Graphable(string id) => MetricRegistry.Get(id) is { IsText: false } ? id : "cpu.usage";
 
     private string SelectedMetric(string fallback) => (_metricList.SelectedItem as ListBoxItem)?.Tag as string ?? fallback;
 
@@ -322,6 +345,9 @@ public sealed class HudEditorWindow : Window
             case ComponentType.CoreGrid: c.MetricId = "cpu.cores"; c.ColSpan = 2; c.Height = 26; c.DetailOnly = true; break;
             case ComponentType.SensorList: c.MetricId = "temps.all"; c.ColSpan = 2; c.RowSpan = 4; break;
             case ComponentType.DriveList: c.MetricId = "disk.drives"; c.ColSpan = 2; c.RowSpan = 3; break;
+            case ComponentType.Trend: c.MetricId = Graphable(SelectedMetric("cpu.usage")); c.ColSpan = 2; break;
+            case ComponentType.Stats: c.MetricId = Graphable(SelectedMetric("fps.current")); c.ColSpan = 2; break;
+            case ComponentType.Template: c.Text = "CPU {cpu.usage} {cpu.temp}   GPU {gpu.usage} {gpu.temp}"; c.ColSpan = 2; break;
         }
         _layout.Components.Add(c);
         Resolve(c);
@@ -406,12 +432,13 @@ public sealed class HudEditorWindow : Window
         _canvas.Width = cols * CW;
         _canvas.Height = rows * CH;
 
-        var cellBrush = new SolidColorBrush(Color.FromArgb(14, 255, 255, 255));
-        var cellStroke = new SolidColorBrush(Color.FromArgb(22, 255, 255, 255));
+        var ink = ((SolidColorBrush)Ui.Res("TextBrush")).Color;
+        var cellBrush = new SolidColorBrush(Color.FromArgb(10, ink.R, ink.G, ink.B));
+        var cellStroke = new SolidColorBrush(Color.FromArgb(40, ink.R, ink.G, ink.B));
         for (int r = 0; r < rows; r++)
             for (int c = 0; c < cols; c++)
             {
-                var rect = new Rectangle { Width = CW - Gap, Height = CH - Gap, RadiusX = 6, RadiusY = 6, Fill = cellBrush, Stroke = cellStroke, StrokeDashArray = new DoubleCollection { 3, 3 } };
+                var rect = new Rectangle { Width = CW - Gap, Height = CH - Gap, RadiusX = 1, RadiusY = 1, Fill = cellBrush, Stroke = cellStroke, StrokeDashArray = new DoubleCollection { 3, 3 } };
                 Canvas.SetLeft(rect, c * CW); Canvas.SetTop(rect, r * CH);
                 _canvas.Children.Add(rect);
             }
@@ -439,9 +466,9 @@ public sealed class HudEditorWindow : Window
         {
             Width = comp.ColSpan * CW - Gap,
             Height = comp.RowSpan * CH - Gap,
-            CornerRadius = new CornerRadius(7),
-            Background = ColorUtil.Brush(((SolidColorBrush)style.Background).Color, 0.95),
-            BorderBrush = sel ? Ui.Res("AccentBrush") : new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+            CornerRadius = new CornerRadius(Math.Min(4, style.CornerRadius)),
+            Background = ColorUtil.Brush(Color.FromRgb(style.Background.Color.R, style.Background.Color.G, style.Background.Color.B), 0.97),
+            BorderBrush = sel ? Ui.Res("AccentBrush") : ColorUtil.Brush(style.Text.Color, 0.2),
             BorderThickness = new Thickness(sel ? 2 : 1),
             Child = grid,
             Cursor = _editable ? Cursors.SizeAll : Cursors.Arrow,
@@ -489,7 +516,7 @@ public sealed class HudEditorWindow : Window
         var t = new ControlTemplate(typeof(Thumb));
         var f = new FrameworkElementFactory(typeof(Border));
         f.SetValue(Border.BackgroundProperty, Ui.Res("AccentBrush"));
-        f.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
+        f.SetValue(Border.CornerRadiusProperty, new CornerRadius(1));
         f.SetValue(Border.BorderBrushProperty, Ui.Res("BgBrush"));
         f.SetValue(Border.BorderThicknessProperty, new Thickness(2));
         t.VisualTree = f;
@@ -638,12 +665,25 @@ public sealed class HudEditorWindow : Window
         Grid Small(Grid row) { if (row.Children.Count > 1 && row.Children[1] is FrameworkElement f && f is not CheckBox && f.Width > 150) f.Width = 170; return row; }
 
         panel.Children.Add(R(Small(Ui.ComboMap("Type", null, c, nameof(HudComponent.Type), Enum.GetValues<ComponentType>().Select(t => (t, TypeName(t))), 170))));
-        bool usesMetric = c.Type is not (ComponentType.Text or ComponentType.Divider or ComponentType.Spacer or ComponentType.Icon or ComponentType.CoreGrid or ComponentType.SensorList or ComponentType.DriveList or ComponentType.FrameTimeGraph);
+        bool usesMetric = c.Type is not (ComponentType.Text or ComponentType.Template or ComponentType.Divider or ComponentType.Spacer or ComponentType.Icon or ComponentType.CoreGrid or ComponentType.SensorList or ComponentType.DriveList or ComponentType.FrameTimeGraph);
         if (usesMetric)
         {
             panel.Children.Add(R(Small(Ui.ComboMap("Metric", null, c, nameof(HudComponent.MetricId), metricItems, 170))));
             panel.Children.Add(R(Small(Ui.ComboMap("Second value", "Shown next to the main value", c, nameof(HudComponent.SecondaryMetricId), metricItems, 170))));
             panel.Children.Add(R(Ui.Toggle("Show as ratio", "e.g. 11.2/32 GB", c, nameof(HudComponent.Ratio))));
+        }
+        if (c.Type == ComponentType.Template)
+        {
+            panel.Children.Add(R(Ui.Caption("Template")));
+            var tpl = new TextBox { Margin = new Thickness(0, 4, 0, 4), FontFamily = (FontFamily)Application.Current.Resources["MonoFont"], FontSize = 12, TextWrapping = TextWrapping.Wrap };
+            var tb = Ui.Bind(c, nameof(HudComponent.Text));
+            tb.UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.LostFocus;
+            tpl.SetBinding(TextBox.TextProperty, tb);
+            tpl.KeyDown += (_, e) => { if (e.Key == Key.Enter) tpl.GetBindingExpression(TextBox.TextProperty)?.UpdateSource(); };
+            panel.Children.Add(tpl);
+            panel.Children.Add(Ui.Muted("Write any text; {metric.id} becomes its live value, {metric.id:v} the bare number. " +
+                "e.g. CPU {cpu.usage} · {cpu.temp}   RAM {ram.used:v}/{ram.total}. Metric ids are listed under \"Metric\" on other components " +
+                "(cpu.usage, cpu.temp, cpu.clock, gpu.usage, gpu.temp, gpu.vram.used, ram.used, ram.pct, fps.current, fps.low1, net.down, net.up, bat.pct, time.now …).", 11));
         }
         if (c.Type == ComponentType.Text)
         {
@@ -657,10 +697,10 @@ public sealed class HudEditorWindow : Window
         panel.Children.Add(R(colorRow));
         panel.Children.Add(Ui.Muted("Empty = automatic severity colors", 11));
         panel.Children.Add(R(Ui.Slider("Font size", null, c, nameof(HudComponent.FontScale), 0.6, 3, 0.05, "{0:0.00}×")));
-        if (c.Type is ComponentType.Graph or ComponentType.FrameTimeGraph or ComponentType.Gauge or ComponentType.Spacer or ComponentType.CoreGrid or ComponentType.Icon)
+        if (c.Type is ComponentType.Graph or ComponentType.Trend or ComponentType.FrameTimeGraph or ComponentType.Gauge or ComponentType.Spacer or ComponentType.CoreGrid or ComponentType.Icon)
             panel.Children.Add(R(Ui.Slider("Height", null, c, nameof(HudComponent.Height), 0, 160, 2, "{0:0} px")));
         panel.Children.Add(R(Ui.Slider("Min width", "0 = automatic", c, nameof(HudComponent.Width), 0, 400, 4, "{0:0} px")));
-        if (c.IsGraph)
+        if (c.IsGraph || c.Type is ComponentType.Trend or ComponentType.Stats)
             panel.Children.Add(R(Small(Ui.ComboMap("History window", null, c, nameof(HudComponent.GraphSeconds), new[] { (0, "Default"), (5, "5 s"), (10, "10 s"), (30, "30 s"), (60, "60 s"), (300, "5 min") }, 170))));
 
         panel.Children.Add(R(Ui.H2("Placement")));
@@ -714,6 +754,9 @@ public sealed class HudEditorWindow : Window
         ComponentType.CoreGrid => "Per-core bars",
         ComponentType.SensorList => "Temperature list",
         ComponentType.DriveList => "Drive list",
+        ComponentType.Trend => "Value + trend",
+        ComponentType.Stats => "Min / avg / max",
+        ComponentType.Template => "Custom text",
         _ => t.ToString(),
     };
 
@@ -733,6 +776,9 @@ public sealed class HudEditorWindow : Window
         ComponentType.CoreGrid => "cores",
         ComponentType.SensorList => "temp",
         ComponentType.DriveList => "disk",
+        ComponentType.Trend => "activity",
+        ComponentType.Stats => "sliders",
+        ComponentType.Template => "text",
         _ => "activity",
     };
 
@@ -752,6 +798,9 @@ public sealed class HudEditorWindow : Window
         ComponentType.CoreGrid => "Load bars for every logical processor.",
         ComponentType.SensorList => "Every available temperature sensor.",
         ComponentType.DriveList => "Every drive: space, throughput, temperature.",
+        ComponentType.Trend => "Value with a small inline sparkline beside it.",
+        ComponentType.Stats => "Lowest, average and highest value over the history window.",
+        ComponentType.Template => "Free text with live values: \"CPU {cpu.usage} · {cpu.temp}\".",
         _ => "",
     };
 }

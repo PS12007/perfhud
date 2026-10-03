@@ -6,16 +6,85 @@ public sealed record ThemeDefinition(
 {
     public static readonly ThemeDefinition[] BuiltIn =
     {
-        new("Midnight", "#0A0D12", "#11161D", "#00D9FF", "#42E88A", "#FFC857", "#FF8C42", "#FF4D6D", "#4CC9F0", "#F2F5F7", "#7C8795"),
-        new("OLED",     "#000000", "#0B0B0D", "#7CF5FF", "#3DDC84", "#FFD166", "#FF9F45", "#FF3B5C", "#5AC8FA", "#FFFFFF", "#8A8F98"),
-        new("Ember",    "#0F0B0A", "#18110F", "#FF7A45", "#7BD88F", "#FFC857", "#FF8C42", "#FF4D6D", "#6CC4FF", "#F7F1EE", "#9A8B84"),
-        new("Viridian", "#07110E", "#0D1A16", "#3DFFB0", "#3DFFB0", "#F4D35E", "#FF9F45", "#FF5470", "#53D8FB", "#EAF7F2", "#7E958C"),
-        new("Synth",    "#0D0814", "#160F21", "#FF4FD8", "#42E88A", "#FFD23F", "#FF8C42", "#FF3864", "#47E5FF", "#F5EEFF", "#8F82A8"),
-        new("Frost",    "#0E1420", "#152033", "#9EC9FF", "#7BE0AD", "#FFD479", "#FFA26B", "#FF6B81", "#9EC9FF", "#EEF4FF", "#8796AE"),
-        new("Graphite", "#121212", "#1B1B1B", "#E0E0E0", "#A5D6A7", "#FFE082", "#FFB74D", "#EF9A9A", "#90CAF9", "#F5F5F5", "#8E8E8E"),
+        new("Signal",   "#151412", "#1E1C19", "#FF6A2B", "#A6D16B", "#F2C14E", "#FF8B3D", "#FF4D3D", "#8FB8C9", "#F3EFE7", "#8C867B"),
+        new("Paper",    "#F3F0E8", "#E8E3D8", "#D9481C", "#3E7D3A", "#B07A00", "#D9661C", "#C0262D", "#3C6E8F", "#1C1A16", "#7A746A"),
+        new("Bone",     "#E9E6DE", "#DCD8CE", "#1C1C1C", "#2F6F3A", "#9A6B00", "#C2581C", "#B3261E", "#3E6A80", "#151515", "#6E6A62"),
+        new("Amber",    "#0F0A03", "#1A1206", "#FFB040", "#FFB040", "#FFD27A", "#FF8A3D", "#FF4A3D", "#C9A46A", "#FFC266", "#8A6A35"),
+        new("Phosphor", "#040A05", "#0A140C", "#6CFF8A", "#6CFF8A", "#E8F56A", "#FFB24A", "#FF5A4A", "#7FD6B0", "#A8FFB8", "#4F8A5B"),
+        new("Mono",     "#0E0E0E", "#191919", "#FFFFFF", "#E6E6E6", "#E8C468", "#E8915A", "#EF5B5B", "#BDBDBD", "#F2F2F2", "#8A8A8A"),
+        new("Clay",     "#1E1613", "#2A1E1A", "#E07856", "#B5C98A", "#E8B85C", "#E8875C", "#E0524A", "#9DB7B3", "#F4E8E1", "#9B8A82"),
+        new("Moss",     "#121610", "#1A2017", "#C9DA5A", "#9CCB6B", "#E0B64E", "#E8894A", "#E06A55", "#8FB9A8", "#E8EDDC", "#858E77"),
+        new("Classic",  "#0A0D12", "#11161D", "#00D9FF", "#42E88A", "#FFC857", "#FF8C42", "#FF4D6D", "#4CC9F0", "#F2F5F7", "#7C8795"),
     };
 
     /// <summary>Okabe–Ito based palette: distinguishable for the common forms of color-vision deficiency.</summary>
     public static readonly (string Cool, string Ok, string Warm, string Hot, string Critical) ColorBlindSafe =
         ("#56B4E9", "#009E73", "#F0E442", "#E69F00", "#D55E00");
+}
+
+/// <summary>
+/// A "look" is a bundle of shape/typography settings (not colors). Applying one just sets the individual
+/// appearance properties, so everything stays fine-tunable afterwards.
+/// </summary>
+public sealed record HudLook(string Name, string Description, Action<AppearanceSettings> Set);
+
+public static class HudLooks
+{
+    public static readonly HudLook[] All =
+    {
+        new("Instrument", "Squared panel, accent edge, segmented bars, label tape headers", a =>
+        {
+            a.PanelStyle = PanelStyle.Solid; a.PanelEdge = PanelEdge.Left; a.CornerRadius = 2; a.Border = true; a.BorderWidth = 1;
+            a.LabelFont = "Segoe UI Semibold"; a.ValueFont = "Bahnschrift"; a.LabelWeight = WeightOption.Regular; a.ValueWeight = WeightOption.SemiBold;
+            a.LabelCase = LabelCase.Upper; a.LabelPosition = LabelPosition.Left; a.HeaderStyle = HeaderStyle.Tape;
+            a.BarStyle = BarStyle.Segmented; a.GraphStyle = GraphStyle.Area; a.GaugeStyle = GaugeStyle.Half;
+            a.ShowIcons = false; a.TextShadow = false; a.Shadow = false; a.PanelPadding = 9; a.RowSpacing = 2.5; a.ColumnSpacing = 8;
+        }),
+        new("Terminal", "Monospace everything, hard corners, column graphs", a =>
+        {
+            a.PanelStyle = PanelStyle.Solid; a.PanelEdge = PanelEdge.None; a.CornerRadius = 0; a.Border = true; a.BorderWidth = 1;
+            a.LabelFont = "Cascadia Mono"; a.ValueFont = "Cascadia Mono"; a.LabelWeight = WeightOption.Regular; a.ValueWeight = WeightOption.Regular;
+            a.LabelCase = LabelCase.Lower; a.LabelPosition = LabelPosition.Left; a.HeaderStyle = HeaderStyle.Plain;
+            a.BarStyle = BarStyle.Segmented; a.GraphStyle = GraphStyle.Columns; a.GaugeStyle = GaugeStyle.Ring;
+            a.ShowIcons = false; a.TextShadow = false; a.Shadow = false; a.PanelPadding = 8; a.RowSpacing = 1.5; a.ColumnSpacing = 10;
+        }),
+        new("Float", "No panel at all — bold numbers with a soft halo", a =>
+        {
+            a.PanelStyle = PanelStyle.Bare; a.PanelEdge = PanelEdge.None; a.CornerRadius = 0; a.Border = false;
+            a.LabelFont = "Bahnschrift"; a.ValueFont = "Bahnschrift"; a.LabelWeight = WeightOption.SemiBold; a.ValueWeight = WeightOption.Bold;
+            a.LabelCase = LabelCase.Upper; a.LabelPosition = LabelPosition.Left; a.HeaderStyle = HeaderStyle.Plain;
+            a.BarStyle = BarStyle.Line; a.GraphStyle = GraphStyle.Line; a.GaugeStyle = GaugeStyle.Arc;
+            a.ShowIcons = false; a.TextShadow = true; a.Shadow = false; a.PanelPadding = 4; a.RowSpacing = 1.5; a.ColumnSpacing = 10;
+        }),
+        new("Stacked", "Small labels sitting above big values", a =>
+        {
+            a.PanelStyle = PanelStyle.Solid; a.PanelEdge = PanelEdge.Top; a.CornerRadius = 2; a.Border = true; a.BorderWidth = 1;
+            a.LabelFont = "Segoe UI"; a.ValueFont = "Bahnschrift"; a.LabelWeight = WeightOption.Regular; a.ValueWeight = WeightOption.SemiBold;
+            a.LabelCase = LabelCase.Upper; a.LabelPosition = LabelPosition.Above; a.HeaderStyle = HeaderStyle.Rule;
+            a.BarStyle = BarStyle.Square; a.GraphStyle = GraphStyle.Area; a.GaugeStyle = GaugeStyle.Arc;
+            a.ShowIcons = false; a.TextShadow = false; a.Shadow = false; a.PanelPadding = 10; a.RowSpacing = 4; a.ColumnSpacing = 12;
+        }),
+        new("Outline", "Transparent panel with a thin frame and line graphs", a =>
+        {
+            a.PanelStyle = PanelStyle.Outline; a.PanelEdge = PanelEdge.None; a.CornerRadius = 4; a.Border = true; a.BorderWidth = 1;
+            a.LabelFont = "Segoe UI"; a.ValueFont = "Bahnschrift"; a.LabelWeight = WeightOption.Regular; a.ValueWeight = WeightOption.SemiBold;
+            a.LabelCase = LabelCase.Upper; a.LabelPosition = LabelPosition.Left; a.HeaderStyle = HeaderStyle.Rule;
+            a.BarStyle = BarStyle.Line; a.GraphStyle = GraphStyle.Line; a.GaugeStyle = GaugeStyle.Ring;
+            a.ShowIcons = true; a.TextShadow = true; a.Shadow = false; a.PanelPadding = 8; a.RowSpacing = 2.5; a.ColumnSpacing = 8;
+        }),
+        new("Soft", "Rounded panel, icons, title-case labels", a =>
+        {
+            a.PanelStyle = PanelStyle.Solid; a.PanelEdge = PanelEdge.None; a.CornerRadius = 12; a.Border = true; a.BorderWidth = 1;
+            a.LabelFont = "Segoe UI"; a.ValueFont = "Segoe UI Variable Display Semibold"; a.LabelWeight = WeightOption.Regular; a.ValueWeight = WeightOption.SemiBold;
+            a.LabelCase = LabelCase.Title; a.LabelPosition = LabelPosition.Left; a.HeaderStyle = HeaderStyle.Rule;
+            a.BarStyle = BarStyle.Rounded; a.GraphStyle = GraphStyle.Area; a.GaugeStyle = GaugeStyle.Arc;
+            a.ShowIcons = true; a.TextShadow = false; a.Shadow = true; a.PanelPadding = 10; a.RowSpacing = 3; a.ColumnSpacing = 8;
+        }),
+    };
+
+    public static void Apply(HudLook look, AppearanceSettings a)
+    {
+        look.Set(a);
+        a.Look = look.Name;
+    }
 }

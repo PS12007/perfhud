@@ -129,10 +129,20 @@ public static class Win32
     public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20, DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWA_BORDER_COLOR = 34;
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
-    public static void UseDarkTitleBar(IntPtr hwnd)
+    public const int DWMWA_CAPTION_COLOR = 35, DWMWA_TEXT_COLOR = 36;
+
+    /// <summary>Dark/light caption plus explicit caption, text and border colors (COLORREF 0x00BBGGRR; colors need Windows 11).</summary>
+    public static void StyleTitleBar(IntPtr hwnd, bool dark, int caption, int text, int border)
     {
-        int on = 1;
-        try { DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, 4); } catch { }
+        try
+        {
+            int on = dark ? 1 : 0;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, 4);
+            DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref caption, 4);
+            DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref text, 4);
+            DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref border, 4);
+        }
+        catch { }
     }
 
     // Undocumented but stable since Windows 10: blur behind for layered windows.

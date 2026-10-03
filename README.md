@@ -25,6 +25,15 @@ monitoring engine. Native .NET 8 / WPF, no services, no injection, everything st
 * **Overlay** – borderless, transparent, always on top, click-through when locked, works over windowed and
   borderless-fullscreen games. Fade in/out, position anywhere (anchors, per-monitor, follow active window, drag to move),
   scale, opacity, themes, compact/detailed, vertical/horizontal, hide-from-capture.
+* **Looks, not just colors** – six one-click HUD looks (*Instrument*, *Terminal*, *Float*, *Stacked*, *Outline*, *Soft*)
+  and nine palettes (*Signal*, *Paper*, *Bone*, *Amber*, *Phosphor*, *Mono*, *Clay*, *Moss*, *Classic*). Every part is
+  tunable on its own: panel (solid / outline / none), accent edge, frame width & color, padding, text halo, label & value
+  fonts and weights, label case (UPPER / Title / lower), labels beside or above values, units on/off, row & column
+  spacing, bar style (segments / square / rounded / line) and thickness, graph style (area / line / columns) and line
+  width, gauge style (half dial / arc / ring), section-header style (tape / underline / plain), state coloring and
+  warning cues. The settings page shows a live preview over a stand-in game frame.
+* **App themes** – the settings, editor and history windows come in *Paper*, *Ink*, *Carbon* and *Moss*
+  (switchable live; the title bar follows on Windows 11).
 * **Metrics** – FPS (current/avg/1%/0.1% lows, frame time + per-frame graph), CPU (total + per-thread load, effective
   clock, peak clock, package power, temperature), GPU (usage, temp, VRAM, power + limit, core/memory clock, fan,
   P-state, **thermal-throttle detection**, sleeping-dGPU detection), iGPU, RAM (used/available/commit/speed/type),
@@ -39,7 +48,9 @@ monitoring engine. Native .NET 8 / WPF, no services, no injection, everything st
 * **Presets** – Minimal, Gaming, Full, plus any number of your own layouts. Cycle with a hotkey.
 * **HUD editor** – drag-and-drop grid editor with live data: move, resize, duplicate, delete, reorder, undo.
   Components: Number, Big number, Percentage, Progress bar, Graph, Frame-time graph, Gauge, Text/header, Icon, Divider,
-  Spacer, Per-core bars, Temperature list, Drive list. Also a one-click **metric picker** for quick custom layouts.
+  Spacer, Per-core bars, Temperature list, Drive list, **Value + trend** (inline sparkline), **Min / avg / max** over
+  the history window, and **Custom text** – free text with live values, e.g. `CPU {cpu.usage} · {cpu.temp}` (use
+  `{id:v}` for the bare number). Also a one-click **metric picker** for quick custom layouts.
 * **App profiles** – e.g. `Cyberpunk2077.exe → Gaming`, `chrome.exe → Minimal`, `Desktop → Hidden`; per profile:
   layout, position, opacity, scale, compact mode, auto-record. Reverts automatically when the app closes/loses focus.
 * **Session history** – auto-records when a full-screen game is detected (or manually / per profile): duration, avg

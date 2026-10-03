@@ -141,16 +141,7 @@ public sealed class HudWindow : Window
         grid.LayoutTransform = Math.Abs(spec.Scale - 1) > 0.001 ? new ScaleTransform(spec.Scale, spec.Scale) : null;
         _host.Content = grid;
 
-        double radius = st.CornerRadius;
-        _panel.CornerRadius = new CornerRadius(radius);
-        _panel.Background = st.Background;
-        _panel.BorderBrush = st.PanelBorder;
-        _panel.BorderThickness = new Thickness(st.HighContrast ? 2 : 1);
-        _panel.Padding = spec.Compact ? new Thickness(5, 4, 5, 4) : new Thickness(8, 7, 8, 7);
-        _panel.Effect = spec.Shadow && !spec.Blur && !st.HighContrast
-            ? new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.55, Color = Colors.Black, RenderingBias = RenderingBias.Performance }
-            : null;
-        _panel.Margin = spec.Shadow && !spec.Blur ? new Thickness(14) : new Thickness(0);
+        HudChrome.Apply(_panel, _dock, _host, st, spec.Shadow && !spec.Blur);
 
         _bannerText.FontFamily = st.LabelFont;
         _bannerText.FontSize = st.LabelSize * 1.05;

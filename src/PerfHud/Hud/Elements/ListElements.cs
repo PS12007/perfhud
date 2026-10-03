@@ -67,7 +67,7 @@ public sealed class SensorListElement : HudElement
             var sev = MetricRegistry.Evaluate(def, r.Value, ctx.Settings);
             var (val, unit) = MetricRegistry.Format(def, r.Value, ctx.Settings);
             SetText(_cells[i].name, r.Name);
-            SetText(_cells[i].value, (sev >= Severity.Hot ? "⚠ " : "") + val + unit);
+            SetText(_cells[i].value, WarnGlyph(sev >= Severity.Hot) + val + (S.ShowUnits ? unit : ""));
             SetFg(_cells[i].value, S.ForSeverity(sev));
         }
     }
@@ -96,7 +96,8 @@ public sealed class DriveListElement : HudElement
             head.Children.Add(space);
             head.Children.Add(title);
             box.Children.Add(head);
-            var bar = new BarFill { Height = 3.5, Margin = new Thickness(0, 3, 0, 2), Track = S.Track, MinWidth = 120 };
+            var bar = MakeBar(Math.Max(2, S.BarThickness * 0.85), 120);
+            bar.Margin = new Thickness(0, 3, 0, 2);
             box.Children.Add(bar);
             var detail = MakeLabel("");
             detail.FontWeight = FontWeights.Normal;
@@ -150,13 +151,11 @@ public sealed class HeaderElement : HudElement
     public HeaderElement(HudComponent c, HudStyle s) : base(c, s)
     {
         var brush = OverrideBrush ?? S.Accent;
+        bool tape = S.HeaderStyle == HeaderStyle.Tape;
+        // Tape headers print the title knocked out of a solid accent block.
+        var bgc = S.Background.Color;
+        var titleBrush = tape ? ColorUtil.Brush(Color.FromRgb(bgc.R, bgc.G, bgc.B)) : brush;
         var dock = new DockPanel { Margin = new Thickness(0, C.Row == 0 ? 0 : 5 * Fs, 0, 1) };
-        if (S.ShowIcons && C.ShowIcon && !string.IsNullOrEmpty(C.Icon))
-        {
-            var icon = Icons.Create(C.Icon, brush, S.IconSize * Fs);
-            icon.Margin = new Thickness(0, 0, 6, 0);
-            dock.Children.Add(icon);
-        }
         _subDef = MetricRegistry.Get(C.SecondaryMetricId);
         if (_subDef != null)
         {
@@ -167,14 +166,32 @@ public sealed class HeaderElement : HudElement
             DockPanel.SetDock(_subtitle, Dock.Right);
             dock.Children.Add(_subtitle);
         }
-        var title = MakeLabel(string.IsNullOrEmpty(C.Text) ? "TEXT" : C.Text, brush);
+
+        var head = new StackPanel { Orientation = Orientation.Horizontal };
+        if (S.ShowIcons && C.ShowIcon && !string.IsNullOrEmpty(C.Icon))
+        {
+            var icon = Icons.Create(C.Icon, titleBrush, S.IconSize * Fs);
+            icon.Margin = new Thickness(0, 0, 6, 0);
+            head.Children.Add(icon);
+        }
+        var title = MakeLabel(string.IsNullOrEmpty(C.Text) ? "TEXT" : C.Text, titleBrush);
         title.FontWeight = FontWeights.Bold;
         title.FontSize = S.LabelSize * Fs * 1.02;
-        dock.Children.Add(title);
+        head.Children.Add(title);
+        if (tape)
+        {
+            dock.Children.Add(new Border
+            {
+                Background = brush, Child = head, HorizontalAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(5 * Fs, 0.5, 6 * Fs, 1), CornerRadius = new CornerRadius(Math.Min(2, S.CornerRadius)),
+            });
+        }
+        else dock.Children.Add(head);
 
         var stack = new StackPanel();
         stack.Children.Add(dock);
-        stack.Children.Add(new Border { Height = 1, Background = new LinearGradientBrush(((SolidColorBrush)brush).Color, Color.FromArgb(0, 0, 0, 0), 0) { Opacity = 0.35 }, Margin = new Thickness(0, 2, 0, 1) });
+        if (S.HeaderStyle == HeaderStyle.Rule)
+            stack.Children.Add(new Border { Height = 1, Background = ColorUtil.Brush(((SolidColorBrush)brush).Color, 0.4), Margin = new Thickness(0, 2, 0, 1) });
         Child = stack;
     }
 
@@ -234,6 +251,9 @@ public static class HudElementFactory
         ComponentType.Icon => new IconElement(c, s),
         ComponentType.Divider => new DividerElement(c, s),
         ComponentType.Spacer => new SpacerElement(c, s),
+        ComponentType.Trend => new TrendElement(c, s),
+        ComponentType.Stats => new StatsElement(c, s),
+        ComponentType.Template => new TemplateElement(c, s),
         _ => new HeaderElement(c, s),
     };
 

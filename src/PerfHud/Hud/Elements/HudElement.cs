@@ -4,6 +4,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using PerfHud.Monitoring;
 using PerfHud.Monitoring.Monitors;
+using PerfHud.Rendering;
 using PerfHud.Settings;
 
 namespace PerfHud.Hud.Elements;
@@ -53,10 +54,10 @@ public abstract class HudElement : Border
 
     protected TextBlock MakeLabel(string text, Brush? brush = null) => new()
     {
-        Text = text,
+        Text = S.Case(text),
         FontFamily = S.LabelFont,
         FontSize = S.LabelSize * Fs,
-        FontWeight = FontWeights.SemiBold,
+        FontWeight = S.LabelWeight,
         Foreground = brush ?? S.Muted,
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis,
@@ -66,11 +67,29 @@ public abstract class HudElement : Border
     {
         FontFamily = S.ValueFont,
         FontSize = size,
-        FontWeight = FontWeights.SemiBold,
+        FontWeight = S.ValueWeight,
         Foreground = S.Text,
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
+
+    protected BarFill MakeBar(double height, double minWidth = 90) => new()
+    {
+        Height = height,
+        Track = S.Track,
+        Kind = S.BarStyle,
+        MinWidth = minWidth,
+        SnapsToDevicePixels = true,
+    };
+
+    /// <summary>Unit text with a leading space where it reads better ("12.4 GB" but "38%" / "62°C"); empty when units are hidden.</summary>
+    protected string UnitText(string? unit)
+    {
+        if (!S.ShowUnits || string.IsNullOrEmpty(unit)) return "";
+        return unit == "%" || unit.StartsWith('°') ? unit : " " + unit;
+    }
+
+    protected string WarnGlyph(bool warn) => warn && S.ShowWarnGlyph ? "⚠ " : "";
 
     protected FrameworkElement? MakeIcon(Brush brush, double sizeMul = 1) =>
         ShowIcon ? Rendering.Icons.Create(IconName, brush, S.IconSize * Fs * sizeMul, 2.1) : null;
@@ -162,7 +181,7 @@ public abstract class HudElement : Border
         return new Border
         {
             Child = text,
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(Math.Min(3, S.CornerRadius)),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(4, 0, 4, 0),
             Margin = new Thickness(6, 0, 0, 0),
@@ -171,9 +190,9 @@ public abstract class HudElement : Border
         };
     }
 
-    protected static void UpdateTag(Border tag, TextBlock text, string? value, Brush brush)
+    protected void UpdateTag(Border tag, TextBlock text, string? value, Brush brush)
     {
-        if (string.IsNullOrEmpty(value)) { if (tag.Visibility != Visibility.Collapsed) tag.Visibility = Visibility.Collapsed; return; }
+        if (string.IsNullOrEmpty(value) || !S.ShowTags) { if (tag.Visibility != Visibility.Collapsed) tag.Visibility = Visibility.Collapsed; return; }
         if (tag.Visibility != Visibility.Visible) tag.Visibility = Visibility.Visible;
         SetText(text, value);
         SetFg(text, brush);

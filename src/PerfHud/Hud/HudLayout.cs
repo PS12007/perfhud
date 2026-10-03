@@ -7,6 +7,7 @@ public enum ComponentType
 {
     Number, BigNumber, Percentage, ProgressBar, Graph, FrameTimeGraph, Gauge,
     Text, Icon, Divider, Spacer, CoreGrid, SensorList, DriveList,
+    Trend, Stats, Template,
 }
 
 /// <summary>One cell of a HUD layout. Layouts are grids: components occupy (Col, Row) with spans.</summary>

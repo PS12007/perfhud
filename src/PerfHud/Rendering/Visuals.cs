@@ -21,6 +21,9 @@ public sealed class Sparkline : FrameworkElement
     private double _shownMax;
 
     public double ShownMax => _shownMax;
+    public Settings.GraphStyle Mode { get; set; }
+    /// <summary>Draws the mid/baseline guides.</summary>
+    public bool ShowGrid { get; set; } = true;
 
     public void SetStyle(Brush line, Brush grid, double thickness = 1.4)
     {
@@ -28,7 +31,9 @@ public sealed class Sparkline : FrameworkElement
         _pen = new Pen(line, thickness) { LineJoin = PenLineJoin.Round };
         _pen.Freeze();
         var c = (line as SolidColorBrush)?.Color ?? Colors.Cyan;
-        var fill = new LinearGradientBrush(Color.FromArgb(70, c.R, c.G, c.B), Color.FromArgb(0, c.R, c.G, c.B), 90);
+        Brush fill = Mode == Settings.GraphStyle.Columns
+            ? new SolidColorBrush(Color.FromArgb((byte)(c.A * 0.85), c.R, c.G, c.B))
+            : new LinearGradientBrush(Color.FromArgb(70, c.R, c.G, c.B), Color.FromArgb(0, c.R, c.G, c.B), 90);
         fill.Freeze();
         _fill = fill;
         _gridPen = new Pen(grid, 1);
@@ -64,6 +69,7 @@ public sealed class Sparkline : FrameworkElement
         }
         _shownMax = max;
         double start = _now - _window;
+        if (Mode == Settings.GraphStyle.Columns) { RebuildColumns(w, h, max, start); return; }
         int cols = Math.Max(2, (int)w);
 
         var line = new StreamGeometry();
@@ -115,13 +121,47 @@ public sealed class Sparkline : FrameworkElement
             _ = firstX;
         }
         line.Freeze(); fill.Freeze();
-        _lineGeo = line; _fillGeo = fill;
+        _lineGeo = line; _fillGeo = Mode == Settings.GraphStyle.Line ? null : fill;
+    }
+
+    /// <summary>Bar-chart mode: the window is split into fixed-width buckets, each drawn as its peak value.</summary>
+    private void RebuildColumns(double w, double h, double max, double start)
+    {
+        const double barW = 3, gap = 1;
+        int buckets = Math.Max(2, (int)((w + gap) / (barW + gap)));
+        var peak = new double[buckets];
+        Array.Fill(peak, double.NaN);
+        for (int i = 0; i < _n; i++)
+        {
+            double v = _v[i];
+            if (double.IsNaN(v)) continue;
+            int b = (int)((_t[i] - start) / _window * buckets);
+            if (b < 0) continue;
+            if (b >= buckets) b = buckets - 1;
+            if (double.IsNaN(peak[b]) || v > peak[b]) peak[b] = v;
+        }
+        var geo = new StreamGeometry();
+        using (var ctx = geo.Open())
+        {
+            for (int b = 0; b < buckets; b++)
+            {
+                if (double.IsNaN(peak[b])) continue;
+                double bh = Math.Max(1, Math.Clamp(peak[b] / max, 0, 1) * h);
+                double x = b * (barW + gap);
+                ctx.BeginFigure(new Point(x, h), true, true);
+                ctx.LineTo(new Point(x, h - bh), false, false);
+                ctx.LineTo(new Point(x + barW, h - bh), false, false);
+                ctx.LineTo(new Point(x + barW, h), false, false);
+            }
+        }
+        geo.Freeze();
+        _fillGeo = geo;
     }
 
     protected override void OnRender(DrawingContext dc)
     {
         double w = ActualWidth, h = ActualHeight;
-        if (_gridPen != null)
+        if (_gridPen != null && ShowGrid)
         {
             dc.DrawLine(_gridPen, new Point(0, Math.Round(h / 2) + 0.5), new Point(w, Math.Round(h / 2) + 0.5));
             dc.DrawLine(_gridPen, new Point(0, h - 0.5), new Point(w, h - 0.5));
@@ -140,6 +180,7 @@ public sealed class BarFill : FrameworkElement
     public double Value { get => (double)GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
     public Brush Track { get; set; } = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
     public Brush Fill { get; set; } = Brushes.Cyan;
+    public Settings.BarStyle Kind { get; set; }
 
     public void AnimateTo(double v, double ms)
     {
@@ -150,10 +191,39 @@ public sealed class BarFill : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        double w = ActualWidth, h = ActualHeight, r = h / 2;
-        dc.DrawRoundedRectangle(Track, null, new Rect(0, 0, w, h), r, r);
-        double fw = Math.Max(Value > 0.001 ? h : 0, w * Value);
-        if (fw > 0) dc.DrawRoundedRectangle(Fill, null, new Rect(0, 0, fw, h), r, r);
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        switch (Kind)
+        {
+            case Settings.BarStyle.Segmented:
+            {
+                double gap = Math.Max(1, h * 0.35), segW = Math.Max(2, h * 0.9);
+                int n = Math.Max(4, (int)((w + gap) / (segW + gap)));
+                segW = (w - gap * (n - 1)) / n;
+                int lit = (int)Math.Round(Value * n);
+                if (Value > 0.001 && lit == 0) lit = 1;
+                for (int i = 0; i < n; i++)
+                    dc.DrawRectangle(i < lit ? Fill : Track, null, new Rect(i * (segW + gap), 0, segW, h));
+                break;
+            }
+            case Settings.BarStyle.Line:
+            {
+                // Hairline track with a thicker fill riding on it.
+                double th = Math.Max(1, Math.Round(h * 0.3));
+                dc.DrawRectangle(Track, null, new Rect(0, h - th, w, th));
+                double fw = w * Value;
+                if (fw > 0) dc.DrawRectangle(Fill, null, new Rect(0, 0, fw, h));
+                break;
+            }
+            default:
+            {
+                double r = Kind == Settings.BarStyle.Rounded ? h / 2 : 0;
+                dc.DrawRoundedRectangle(Track, null, new Rect(0, 0, w, h), r, r);
+                double fw = Math.Max(Value > 0.001 ? (r > 0 ? h : 1) : 0, w * Value);
+                if (fw > 0) dc.DrawRoundedRectangle(Fill, null, new Rect(0, 0, fw, h), r, r);
+                break;
+            }
+        }
     }
 }
 
@@ -167,6 +237,8 @@ public sealed class GaugeArc : FrameworkElement
     public Brush Track { get; set; } = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
     public Brush Fill { get; set; } = Brushes.Cyan;
     public double Thickness { get; set; } = 5;
+    public Settings.GaugeStyle Kind { get; set; }
+    public bool RoundCaps { get; set; } = true;
 
     public void AnimateTo(double v, double ms)
     {
@@ -177,14 +249,23 @@ public sealed class GaugeArc : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        double size = Math.Min(ActualWidth, ActualHeight);
+        double w = ActualWidth, h = ActualHeight;
+        var (start, sweep) = Kind switch
+        {
+            Settings.GaugeStyle.Ring => (-90.0, 360.0),
+            Settings.GaugeStyle.Half => (180.0, 180.0),
+            _ => (135.0, 270.0),
+        };
+        // A half gauge sits on the element's bottom edge and can use the full width.
+        double size = Kind == Settings.GaugeStyle.Half ? Math.Min(w, h * 2) : Math.Min(w, h);
         if (size < 4) return;
-        var c = new Point(ActualWidth / 2, ActualHeight / 2);
+        var c = Kind == Settings.GaugeStyle.Half ? new Point(w / 2, h - Thickness / 2) : new Point(w / 2, h / 2);
         double r = size / 2 - Thickness / 2 - 0.5;
-        var track = new Pen(Track, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-        var fill = new Pen(Fill, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-        dc.DrawGeometry(null, track, Arc(c, r, 135, 270));
-        if (Value > 0.005) dc.DrawGeometry(null, fill, Arc(c, r, 135, 270 * Value));
+        var cap = RoundCaps ? PenLineCap.Round : PenLineCap.Flat;
+        var track = new Pen(Track, Thickness) { StartLineCap = cap, EndLineCap = cap };
+        var fill = new Pen(Fill, Thickness) { StartLineCap = cap, EndLineCap = cap };
+        dc.DrawGeometry(null, track, Arc(c, r, start, sweep));
+        if (Value > 0.005) dc.DrawGeometry(null, fill, Arc(c, r, start, sweep * Value));
     }
 
     private static Geometry Arc(Point c, double r, double startDeg, double sweepDeg)
@@ -210,6 +291,7 @@ public sealed class CoreBars : FrameworkElement
     private double[] _values = Array.Empty<double>();
     public Func<double, Brush>? BrushFor { get; set; }
     public Brush Track { get; set; } = new SolidColorBrush(Color.FromArgb(30, 255, 255, 255));
+    public double Radius { get; set; } = 1;
 
     public void SetValues(double[] v) { _values = v; InvalidateVisual(); }
 
@@ -223,10 +305,10 @@ public sealed class CoreBars : FrameworkElement
         for (int i = 0; i < n; i++)
         {
             double x = i * (bw + gap);
-            dc.DrawRoundedRectangle(Track, null, new Rect(x, 0, bw, h), 1, 1);
+            dc.DrawRoundedRectangle(Track, null, new Rect(x, 0, bw, h), Radius, Radius);
             double v = Math.Clamp(_values[i] / 100, 0, 1);
             double bh = Math.Max(1, v * h);
-            dc.DrawRoundedRectangle(BrushFor?.Invoke(_values[i]) ?? Brushes.Cyan, null, new Rect(x, h - bh, bw, bh), 1, 1);
+            dc.DrawRoundedRectangle(BrushFor?.Invoke(_values[i]) ?? Brushes.Cyan, null, new Rect(x, h - bh, bw, bh), Radius, Radius);
         }
     }
 }

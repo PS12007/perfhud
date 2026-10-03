@@ -21,25 +21,29 @@ public static class Ui
     public static TextBlock H2(string text) => new() { Text = text, Style = StyleRes("H2") };
     public static TextBlock Muted(string text, double size = 12) => new() { Text = text, Style = StyleRes("Muted"), FontSize = size };
 
+    /// <summary>Mono caption, e.g. section titles and small field headings.</summary>
+    public static TextBlock Caption(string text) => new() { Text = text.ToUpperInvariant(), Style = StyleRes("Caption") };
+
+    /// <summary>A section: ink rule on top, mono caption, then rows separated by hairlines.</summary>
     public static Border Card(string? title, string? subtitle, params UIElement[] children)
     {
         var stack = new StackPanel();
         if (title != null)
         {
-            var t = H2(title);
-            t.FontSize = 14;
-            stack.Children.Add(t);
+            stack.Children.Add(Caption(title));
             if (subtitle != null)
             {
                 var m = Muted(subtitle);
-                m.Margin = new Thickness(0, 2, 0, 4);
+                m.Margin = new Thickness(0, 3, 0, 2);
+                m.MaxWidth = 620;
+                m.HorizontalAlignment = HorizontalAlignment.Left;
                 stack.Children.Add(m);
             }
         }
         for (int i = 0; i < children.Length; i++)
         {
             if (i > 0 || title != null)
-                stack.Children.Add(new Border { Height = 1, Background = Res("BorderBrush"), Margin = new Thickness(0, 10, 0, 10), Opacity = i == 0 ? 0 : 0.7 });
+                stack.Children.Add(new Border { Height = 1, Background = Res("BorderBrush"), Margin = new Thickness(0, 9, 0, 9), Opacity = i == 0 ? 0 : 1 });
             stack.Children.Add(children[i]);
         }
         return new Border { Style = StyleRes("Card"), Child = stack };
@@ -52,7 +56,9 @@ public static class Ui
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 20, 0) };
-        left.Children.Add(new TextBlock { Text = label, Foreground = Res("TextBrush"), FontSize = 13 });
+        var lt = new TextBlock { Text = label, FontSize = 13 };
+        lt.SetResourceReference(TextBlock.ForegroundProperty, "TextBrush");
+        left.Children.Add(lt);
         if (!string.IsNullOrEmpty(description)) left.Children.Add(Muted(description, 11.5));
         g.Children.Add(left);
         if (control is FrameworkElement fe && controlWidth > 0 && fe is not CheckBox) fe.Width = controlWidth;
@@ -124,19 +130,27 @@ public static class Ui
         return Row(label, description, t, width);
     }
 
+    /// <summary>
+    /// Text buttons stay text-only (cleaner); the icon is used only when there's no text (icon buttons like delete / move).
+    /// Content is always a StackPanel whose [1] child is the label, so callers can relabel it.
+    /// </summary>
     public static Button Button(string text, Action click, string? styleKey = null, string? icon = null)
     {
         var b = new Button { Margin = new Thickness(0, 0, 8, 0) };
         if (styleKey != null) b.Style = StyleRes(styleKey);
-        if (icon != null)
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        bool iconOnly = string.IsNullOrEmpty(text) && icon != null;
+        if (iconOnly)
         {
-            var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            var fg = styleKey == "AccentButton" ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(6, 18, 26)) : Res("TextBrush");
-            sp.Children.Add(Icons.Create(icon, fg, 14, 2.2));
-            sp.Children.Add(new TextBlock { Text = text, Margin = new Thickness(7, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
-            b.Content = sp;
+            var path = Icons.Create(icon, Res("TextBrush"), 14, 2);
+            if (path is Viewbox { Child: Canvas cv } && cv.Children.Count > 0 && cv.Children[0] is System.Windows.Shapes.Path p)
+                p.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, styleKey == "AccentButton" ? "OnAccentBrush" : styleKey == "DangerButton" ? "DangerBrush" : "TextBrush");
+            sp.Children.Add(path);
+            b.Padding = new Thickness(7, 5, 7, 5);
         }
-        else b.Content = text;
+        else sp.Children.Add(new Border { Width = 0 });
+        sp.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, Visibility = iconOnly ? Visibility.Collapsed : Visibility.Visible });
+        b.Content = sp;
         b.Click += (_, _) => click();
         return b;
     }
@@ -160,7 +174,7 @@ public static class Ui
     {
         var t = new TextBox { Width = 110, FontFamily = (FontFamily)Application.Current.Resources["MonoFont"] };
         t.SetBinding(TextBox.TextProperty, Bind(source, path));
-        var sw = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(6), BorderBrush = Res("BorderStrongBrush"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 8, 0) };
+        var sw = new Border { Width = 26, Height = 26, BorderBrush = Res("TextBrush"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 8, 0) };
         sw.SetBinding(Border.BackgroundProperty, new Binding(path) { Source = source, Converter = HexToBrush.Instance });
         var sp = new StackPanel { Orientation = Orientation.Horizontal };
         sp.Children.Add(sw);
@@ -168,22 +182,52 @@ public static class Ui
         return Row(label, null, sp, 0);
     }
 
+    /// <summary>A note set off by a colored bar in the margin — no box, no icon.</summary>
     public static Border Callout(string text, string kind = "info")
     {
         var brush = kind switch { "warn" => Res("WarningBrush"), "ok" => Res("SuccessBrush"), "danger" => Res("DangerBrush"), _ => Res("AccentBrush") };
-        var sp = new DockPanel();
-        var icon = Icons.Create(kind == "warn" || kind == "danger" ? "warn" : kind == "ok" ? "shield" : "info", brush, 16);
-        icon.Margin = new Thickness(0, 1, 10, 0);
-        icon.VerticalAlignment = VerticalAlignment.Top;
-        sp.Children.Add(icon);
-        sp.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Res("TextBrush"), FontSize = 12.5 });
-        var c = ((SolidColorBrush)brush).Color;
         return new Border
         {
-            Child = sp, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 9, 12, 9), Margin = new Thickness(0, 0, 0, 12),
-            Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(24, c.R, c.G, c.B)),
-            BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, c.R, c.G, c.B)), BorderThickness = new Thickness(1),
+            Child = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = Res("TextBrush"), FontSize = 12.5, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left },
+            Padding = new Thickness(12, 2, 0, 2), Margin = new Thickness(0, 0, 0, 22),
+            BorderBrush = brush, BorderThickness = new Thickness(3, 0, 0, 0),
         };
+    }
+
+    /// <summary>Row of selectable chips (one per option) bound to a property — a flatter alternative to a combo box for 2–5 choices.</summary>
+    public static Grid Segmented<T>(string label, string? description, object source, string path, IEnumerable<(T Value, string Text)> items)
+    {
+        var prop = source.GetType().GetProperty(path)!;
+        var wrap = new WrapPanel();
+        var buttons = new List<(Button b, T v)>();
+        void Sync()
+        {
+            var cur = prop.GetValue(source);
+            foreach (var (b, v) in buttons)
+            {
+                bool on = Equals(cur, v);
+                b.SetResourceReference(Control.BackgroundProperty, on ? "TextBrush" : "InputBrush");
+                b.SetResourceReference(Control.ForegroundProperty, on ? "BgBrush" : "TextBrush");
+                b.SetResourceReference(Control.BorderBrushProperty, on ? "TextBrush" : "BorderStrongBrush");
+            }
+        }
+        foreach (var (value, text) in items)
+        {
+            var b = new Button { Style = StyleRes("ChipButton"), Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, -1, 0), Content = new TextBlock { Text = text, FontSize = 12 } };
+            var v = value;
+            b.Click += (_, _) => { prop.SetValue(source, v); Sync(); };
+            buttons.Add((b, v));
+            wrap.Children.Add(b);
+        }
+        if (source is System.ComponentModel.INotifyPropertyChanged npc)
+        {
+            System.ComponentModel.PropertyChangedEventHandler h = (_, e) => { if (e.PropertyName == path) Sync(); };
+            npc.PropertyChanged += h;
+            wrap.Unloaded += (_, _) => npc.PropertyChanged -= h;
+            wrap.Loaded += (_, _) => { npc.PropertyChanged -= h; npc.PropertyChanged += h; Sync(); };
+        }
+        Sync();
+        return Row(label, description, wrap, 0);
     }
 }
 

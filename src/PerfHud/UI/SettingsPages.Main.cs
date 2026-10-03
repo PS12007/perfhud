@@ -41,15 +41,24 @@ public sealed partial class SettingsWindow
                 $"{Gesture(HotkeyAction.CyclePreset)} to cycle layouts and {Gesture(HotkeyAction.ToggleCompact)} for compact mode. PerfHud lives in the system tray — " +
                 "everything here applies instantly and is saved automatically.", "ok"));
 
-        var tiles = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 6) };
+        // Readout grid: hairline-ruled cells, mono caption, big number. Reads like an instrument panel, not a dashboard of cards.
+        var tiles = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 30) };
         (TextBlock v, TextBlock d) Tile(string icon, string title)
         {
-            var big = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = Ui.Res("TextBrush"), FontFamily = new FontFamily("Bahnschrift, Segoe UI"), Margin = new Thickness(0, 6, 0, 0) };
+            _ = icon;
+            var big = new TextBlock { FontSize = 26, FontWeight = FontWeights.SemiBold, Foreground = Ui.Res("TextBrush"), FontFamily = new FontFamily("Bahnschrift, Segoe UI"), Margin = new Thickness(0, 4, 0, 2), TextTrimming = TextTrimming.CharacterEllipsis };
             var det = Ui.Muted("", 11.5);
-            var head = new StackPanel { Orientation = Orientation.Horizontal };
-            head.Children.Add(Icons.Create(icon, Ui.Res("AccentBrush"), 15));
-            head.Children.Add(new TextBlock { Text = title, Margin = new Thickness(7, 0, 0, 0), Foreground = Ui.Res("MutedBrush"), FontSize = 12, FontWeight = FontWeights.SemiBold });
-            var b = new Border { Style = Ui.StyleRes("Card"), Margin = new Thickness(0, 0, 10, 10), Child = Ui.Stack(head, big, det) };
+            det.TextWrapping = TextWrapping.NoWrap;
+            det.TextTrimming = TextTrimming.CharacterEllipsis;
+            var head = Ui.Caption(title);
+            head.Foreground = Ui.Res("MutedBrush");
+            head.FontWeight = FontWeights.Normal;
+            int i = tiles.Children.Count;
+            var b = new Border
+            {
+                BorderBrush = Ui.Res("BorderStrongBrush"), BorderThickness = new Thickness(i % 3 == 0 ? 0 : 1, 1, 0, i >= 3 ? 1 : 0),
+                Padding = new Thickness(i % 3 == 0 ? 0 : 16, 12, 12, 14), Child = Ui.Stack(head, big, det),
+            };
             tiles.Children.Add(b);
             return (big, det);
         }
@@ -176,75 +185,6 @@ public sealed partial class SettingsWindow
         root.Children.Add(Ui.Card("Shortcuts", "Click a box and press the new combination. Backspace clears.", rows.ToArray()));
         root.Children.Add(Ui.Buttons(Ui.Button("Reset all to defaults", () => { foreach (var b in S.Hotkeys) b.Gesture = DefaultHotkeys.For(b.Action); }, null, "history")));
         return root;
-    }
-
-    // ── Appearance ──────────────────────────────────────
-
-    private UIElement PageAppearance()
-    {
-        var a = S.Appearance;
-        var themes = new WrapPanel();
-        foreach (var t in ThemeDefinition.BuiltIn)
-        {
-            var sw = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-            foreach (var c in new[] { t.Background, t.Accent, t.Success, t.Warning, t.Danger })
-                sw.Children.Add(new Border { Width = 16, Height = 16, CornerRadius = new CornerRadius(4), Margin = new Thickness(0, 0, 4, 0), Background = ColorUtil.Brush(c, Colors.Black), BorderBrush = Ui.Res("BorderStrongBrush"), BorderThickness = new Thickness(1) });
-            var btn = new Button { Margin = new Thickness(0, 0, 10, 10), Padding = new Thickness(12, 10, 12, 10), Content = Ui.Stack(sw, new TextBlock { Text = t.Name, FontSize = 12.5 }) };
-            var theme = t;
-            btn.Click += (_, _) => a.ApplyTheme(theme);
-            themes.Children.Add(btn);
-        }
-
-        var fonts = Fonts.SystemFontFamilies.Select(f => f.Source).OrderBy(n => n).ToList();
-        ComboBox FontCombo(string path)
-        {
-            var c = new ComboBox { ItemsSource = fonts, IsEditable = true, Width = 260 };
-            c.SetBinding(ComboBox.TextProperty, Ui.Bind(a, path));
-            return c;
-        }
-
-        var accents = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
-        foreach (var hex in new[] { "#00D9FF", "#7CF5FF", "#3DFFB0", "#42E88A", "#B4FF39", "#FFC857", "#FF7A45", "#FF4D6D", "#FF4FD8", "#A78BFA", "#9EC9FF", "#FFFFFF" })
-        {
-            var chip = new Button { Width = 26, Height = 26, Padding = new Thickness(0), Margin = new Thickness(0, 0, 6, 6), Background = ColorUtil.Brush(hex, Colors.White), ToolTip = hex };
-            chip.Click += (_, _) => a.Accent = hex;
-            accents.Children.Add(chip);
-        }
-
-        return Ui.Stack(
-            Ui.Card("Theme", "Pick a preset, then fine-tune any color below.", themes),
-            Ui.Card("Colors", "Severity colors are used for color-coded values (cool → normal → warm → hot → critical).",
-                Ui.Row("Accent quick picks", null, accents, 420),
-                Ui.Color("Accent", a, nameof(AppearanceSettings.Accent)),
-                Ui.Color("Background", a, nameof(AppearanceSettings.Background)),
-                Ui.Color("Panel", a, nameof(AppearanceSettings.Panel)),
-                Ui.Color("Text", a, nameof(AppearanceSettings.Text)),
-                Ui.Color("Muted text", a, nameof(AppearanceSettings.Muted)),
-                Ui.Color("Cool", a, nameof(AppearanceSettings.Cool)),
-                Ui.Color("Normal / success", a, nameof(AppearanceSettings.Success)),
-                Ui.Color("Warm / warning", a, nameof(AppearanceSettings.Warning)),
-                Ui.Color("Hot", a, nameof(AppearanceSettings.Hot)),
-                Ui.Color("Critical / danger", a, nameof(AppearanceSettings.Danger))),
-            Ui.Card("Transparency & size", null,
-                Ui.Slider("Background opacity", "Opacity of the HUD panel only — text stays crisp", a, nameof(AppearanceSettings.BackgroundOpacity), 0, 1, 0.01, "{0:P0}"),
-                Ui.Slider("HUD opacity", "Opacity of the entire overlay", a, nameof(AppearanceSettings.Opacity), 0.2, 1, 0.01, "{0:P0}"),
-                Ui.Slider("Scale", null, a, nameof(AppearanceSettings.Scale), 0.6, 2.5, 0.05, "{0:0.00}×"),
-                Ui.Slider("Font size", null, a, nameof(AppearanceSettings.FontScale), 0.7, 1.8, 0.05, "{0:0.00}×"),
-                Ui.Slider("Corner radius", null, a, nameof(AppearanceSettings.CornerRadius), 0, 20, 1, "{0:0} px")),
-            Ui.Card("Effects", null,
-                Ui.Toggle("Background blur (experimental)", "Frosted-glass blur via the Windows compositor. On some Windows builds the blur fills the HUD's square bounds.", a, nameof(AppearanceSettings.Blur)),
-                Ui.Toggle("Soft shadow", "Drawn when blur is off", a, nameof(AppearanceSettings.Shadow)),
-                Ui.Toggle("Subtle border", null, a, nameof(AppearanceSettings.Border)),
-                Ui.Slider("Animation speed", "0 disables animations", a, nameof(AppearanceSettings.AnimationSpeed), 0, 2, 0.1, "{0:0.0}×")),
-            Ui.Card("Typography & elements", null,
-                Ui.Row("Label font", null, FontCombo(nameof(AppearanceSettings.LabelFont)), 0),
-                Ui.Row("Value font", "A font with tabular digits keeps numbers from jumping (Bahnschrift, Cascadia Mono, Consolas)", FontCombo(nameof(AppearanceSettings.ValueFont)), 0),
-                Ui.Toggle("Show icons", null, a, nameof(AppearanceSettings.ShowIcons)),
-                Ui.Toggle("Show labels", null, a, nameof(AppearanceSettings.ShowLabels))),
-            Ui.Card("Accessibility", "Warnings never rely on color alone — a ⚠ glyph and a text tag (HOT, LOW, THERMAL) are always shown.",
-                Ui.Toggle("High contrast", "Opaque black background, white text, stronger borders (also follows Windows high-contrast mode)", a, nameof(AppearanceSettings.HighContrast)),
-                Ui.ComboMap("Color vision", null, a, nameof(AppearanceSettings.ColorVision), new[] { (ColorVisionMode.Standard, "Standard"), (ColorVisionMode.ColorBlindSafe, "Color-blind safe (Okabe–Ito)") }),
-                Ui.Muted("Settings window: Ctrl + / Ctrl − to zoom, Tab / arrow keys to navigate.")));
     }
 
     // ── HUD ─────────────────────────────────────────────

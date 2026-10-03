@@ -61,6 +61,12 @@ public sealed class AppHost : IDisposable
     public void Start(bool fromStartup)
     {
         var s = Settings.Current;
+        UI.UiTheme.Apply(s.Appearance.AppTheme);
+        Settings.Changed += (sender, prop) =>
+        {
+            if (prop == nameof(AppearanceSettings.AppTheme) || sender is AppSettings)
+                Application.Current?.Dispatcher.BeginInvoke(() => UI.UiTheme.Apply(Settings.Current.Appearance.AppTheme));
+        };
         Log.Info($"PerfHud {typeof(AppHost).Assembly.GetName().Version} starting (admin={Elevation.IsAdmin}, startup={fromStartup}, OS={Environment.OSVersion})");
 
         // ── Monitoring (each monitor isolated; order = first-run order) ──

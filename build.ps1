@@ -8,7 +8,7 @@
   ./build.ps1 -Installer          # also compiles the Inno Setup installer if ISCC.exe is available
 #>
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0",
     [switch]$SelfContained,
     [switch]$Installer
 )

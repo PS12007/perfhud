@@ -32,8 +32,8 @@ public sealed class GraphElement : HudElement
         head.Children.Add(vb);
         stack.Children.Add(head);
 
-        _spark = new Sparkline { Height = Math.Max(12, (C.Height > 0 ? C.Height : 28) * Fs), Margin = new Thickness(0, 3, 0, 1), MinWidth = 120 };
-        _spark.SetStyle(OverrideBrush ?? S.Accent, S.Grid);
+        _spark = new Sparkline { Height = Math.Max(12, (C.Height > 0 ? C.Height : 28) * Fs), Margin = new Thickness(0, 3, 0, 1), MinWidth = 120, Mode = S.GraphStyle };
+        _spark.SetStyle(OverrideBrush ?? S.Accent, S.Grid, S.GraphLineWidth);
         stack.Children.Add(_spark);
         Child = stack;
     }
@@ -43,10 +43,10 @@ public sealed class GraphElement : HudElement
         var p = Compose(ctx);
         SetRun(_value, p.Value);
         SetFg(_value, p.Brush);
-        SetRun(_unit, p.Unit.Length > 0 && p.Unit != "%" && !p.Unit.StartsWith('°') ? " " + p.Unit : p.Unit);
+        SetRun(_unit, UnitText(p.Unit));
 
         var line = OverrideBrush ?? (Def?.Kind is MetricKind.Temperature or MetricKind.Fps or MetricKind.FrameTime && p.Severity >= Severity.Warm ? p.Brush : S.Accent);
-        if (!ReferenceEquals(line, _lastLine)) { _spark.SetStyle(line, S.Grid); _lastLine = line; }
+        if (!ReferenceEquals(line, _lastLine)) { _spark.SetStyle(line, S.Grid, S.GraphLineWidth); _lastLine = line; }
 
         double window = GraphWindow;
         int n;
@@ -90,7 +90,7 @@ public sealed class CoreGridElement : HudElement
         _summary.FontWeight = FontWeights.Normal;
         head.Children.Add(_summary);
         stack.Children.Add(head);
-        _bars = new CoreBars { Height = Math.Max(10, (C.Height > 0 ? C.Height : 26) * Fs), Margin = new Thickness(0, 4, 0, 1), MinWidth = 120, Track = S.Track };
+        _bars = new CoreBars { Height = Math.Max(10, (C.Height > 0 ? C.Height : 26) * Fs), Margin = new Thickness(0, 4, 0, 1), MinWidth = 120, Track = S.Track, Radius = S.BarStyle == Settings.BarStyle.Rounded ? 1.5 : 0 };
         _bars.BrushFor = v =>
         {
             var t = _ctx?.Settings.Thresholds;

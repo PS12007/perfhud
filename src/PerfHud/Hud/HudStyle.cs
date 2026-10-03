@@ -36,12 +36,49 @@ public sealed class HudStyle
     public required SolidColorBrush Background, PanelBorder, Text, Muted, Accent, Cool, Normal, Warm, Hot, Critical, Track, Grid, Panel;
     public required FontFamily LabelFont, ValueFont;
     public double LabelSize, ValueSize, BigSize, SmallSize, IconSize;
-    public double CellPadX, CellPadY;
+    public double CellPadX, CellPadY, PanelPadding;
     public bool ShowIcons, ShowLabels, Compact, HighContrast;
     public double AnimMs;
     public HudAlignment Align;
     public int GraphSeconds;
     public double CornerRadius;
+
+    public PanelStyle PanelStyle;
+    public PanelEdge PanelEdge;
+    public double BorderWidth;
+    public bool TextShadow, ShowUnits = true, ShowWarnGlyph = true, ShowTags = true;
+    public BarStyle BarStyle;
+    public double BarThickness = 4, GraphLineWidth = 1.4;
+    public GraphStyle GraphStyle;
+    public GaugeStyle GaugeStyle;
+    public LabelCase LabelCase;
+    public LabelPosition LabelPosition;
+    public HeaderStyle HeaderStyle;
+    public FontWeight ValueWeight = FontWeights.SemiBold, LabelWeight = FontWeights.SemiBold;
+
+    public bool LightBackground => Background.Color.R * 0.299 + Background.Color.G * 0.587 + Background.Color.B * 0.114 > 150;
+
+    private static readonly HashSet<string> Acronyms = new(StringComparer.OrdinalIgnoreCase)
+        { "CPU", "GPU", "RAM", "VRAM", "FPS", "SSD", "OS", "BIOS", "HDR", "OEM", "IP", "C/T", "MEM", "AVG", "1%", "0.1%" };
+
+    /// <summary>Applies the configured label case to a label/header text.</summary>
+    public string Case(string s) => LabelCase switch
+    {
+        LabelCase.Upper => s.ToUpperInvariant(),
+        LabelCase.Lower => s.ToLowerInvariant(),
+        LabelCase.Title => string.Join(' ', s.Split(' ').Select(w =>
+            w.Length == 0 || Acronyms.Contains(w) ? w.ToUpperInvariant() : char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant())),
+        _ => s,
+    };
+
+    public static FontWeight Weight(WeightOption w) => w switch
+    {
+        WeightOption.Light => FontWeights.Light,
+        WeightOption.Regular => FontWeights.Normal,
+        WeightOption.Medium => FontWeights.Medium,
+        WeightOption.Bold => FontWeights.Bold,
+        _ => FontWeights.SemiBold,
+    };
 
     public SolidColorBrush ForSeverity(Severity s) => s switch
     {
@@ -77,21 +114,33 @@ public sealed class HudStyle
         }
 
         double fs = a.FontScale * (compact ? 0.92 : 1.0);
+        var panelStyle = hc ? PanelStyle.Solid : a.PanelStyle;
+        double bgAlpha = hc ? 1 : panelStyle switch { PanelStyle.Solid => a.BackgroundOpacity, _ => 0.004 }; // ~0 keeps the panel hit-testable for dragging
+        Color borderColor = hc ? Colors.White
+            : ColorUtil.IsValidHex(a.BorderColor) ? ColorUtil.Parse(a.BorderColor, text)
+            : text;
+        double borderAlpha = hc ? 0.9
+            : !a.Border || panelStyle == PanelStyle.Bare ? 0
+            : ColorUtil.IsValidHex(a.BorderColor) ? 1
+            : panelStyle == PanelStyle.Outline ? 0.5 : 0.12;
+
+        var textBrush = ColorUtil.Brush(text);
         return new HudStyle
         {
-            Background = ColorUtil.Brush(bg, hc ? 1 : a.BackgroundOpacity),
+            Background = ColorUtil.Brush(bg, bgAlpha),
             Panel = ColorUtil.Brush(a.Panel, Colors.Black, hc ? 1 : 0.6),
-            PanelBorder = ColorUtil.Brush(hc ? Colors.White : Color.FromRgb(255, 255, 255), hc ? 0.9 : (a.Border ? 0.09 : 0)),
-            Text = ColorUtil.Brush(text),
+            PanelBorder = ColorUtil.Brush(borderColor, borderAlpha),
+            Text = textBrush,
             Muted = ColorUtil.Brush(muted),
             Accent = ColorUtil.Brush(accent),
-            Cool = ColorUtil.Brush(cool),
-            Normal = ColorUtil.Brush(ok),
+            // Severity coloring off: calm states use the text color; warm and above still stand out.
+            Cool = a.ColorBySeverity || hc ? ColorUtil.Brush(cool) : textBrush,
+            Normal = a.ColorBySeverity || hc ? ColorUtil.Brush(ok) : textBrush,
             Warm = ColorUtil.Brush(warm),
             Hot = ColorUtil.Brush(hot),
             Critical = ColorUtil.Brush(crit),
-            Track = ColorUtil.Brush(Colors.White, hc ? 0.35 : 0.08),
-            Grid = ColorUtil.Brush(Colors.White, hc ? 0.3 : 0.06),
+            Track = ColorUtil.Brush(text, hc ? 0.35 : 0.12),
+            Grid = ColorUtil.Brush(text, hc ? 0.3 : 0.08),
             LabelFont = new FontFamily(string.IsNullOrWhiteSpace(a.LabelFont) ? "Segoe UI" : a.LabelFont + ", Segoe UI"),
             ValueFont = new FontFamily(string.IsNullOrWhiteSpace(a.ValueFont) ? "Bahnschrift" : a.ValueFont + ", Bahnschrift, Segoe UI"),
             LabelSize = 10.5 * fs,
@@ -99,8 +148,9 @@ public sealed class HudStyle
             BigSize = 30 * fs,
             SmallSize = 9.5 * fs,
             IconSize = 12 * fs,
-            CellPadX = compact ? 5 : 7,
-            CellPadY = compact ? 1 : 2.5,
+            CellPadX = Math.Clamp(a.ColumnSpacing, 0, 30) * (compact ? 0.7 : 1),
+            CellPadY = Math.Clamp(a.RowSpacing, 0, 20) * (compact ? 0.4 : 1),
+            PanelPadding = Math.Clamp(a.PanelPadding, 0, 40) * (compact ? 0.65 : 1),
             ShowIcons = a.ShowIcons,
             ShowLabels = a.ShowLabels,
             Compact = compact,
@@ -109,6 +159,23 @@ public sealed class HudStyle
             Align = s.Hud.Alignment,
             GraphSeconds = s.Performance.GraphHistorySeconds,
             CornerRadius = a.CornerRadius,
+            PanelStyle = panelStyle,
+            PanelEdge = hc ? PanelEdge.None : a.PanelEdge,
+            BorderWidth = hc ? 2 : Math.Clamp(a.BorderWidth, 0, 6),
+            TextShadow = a.TextShadow && !hc,
+            ShowUnits = a.ShowUnits,
+            ShowWarnGlyph = a.ShowWarningGlyph || hc,
+            ShowTags = a.ShowWarningTags || hc,
+            BarStyle = a.BarStyle,
+            BarThickness = Math.Clamp(a.BarThickness, 1, 16),
+            GraphStyle = a.GraphStyle,
+            GraphLineWidth = Math.Clamp(a.GraphLineWidth, 0.5, 5),
+            GaugeStyle = a.GaugeStyle,
+            LabelCase = a.LabelCase,
+            LabelPosition = a.LabelPosition,
+            HeaderStyle = a.HeaderStyle,
+            ValueWeight = Weight(a.ValueWeight),
+            LabelWeight = Weight(a.LabelWeight),
         };
     }
 }

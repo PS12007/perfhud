@@ -27,8 +27,8 @@ public sealed class HistoryWindow : Window
         Title = "PerfHud — Session history";
         Width = 1120; Height = 760; MinWidth = 820; MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Ui.Res("BgBrush");
-        Foreground = Ui.Res("TextBrush");
+        SetResourceReference(BackgroundProperty, "BgBrush");
+        SetResourceReference(ForegroundProperty, "TextBrush");
         FontFamily = (FontFamily)Application.Current.Resources["UiFont"];
         Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/PerfHud;component/Assets/app.ico"));
 
@@ -44,7 +44,7 @@ public sealed class HistoryWindow : Window
         DockPanel.SetDock(top, Dock.Top);
         root.Children.Add(top);
 
-        var left = new Border { Style = Ui.StyleRes("Card"), Width = 330, Padding = new Thickness(6), Margin = new Thickness(0, 0, 14, 0), Child = _list };
+        var left = new Border { Style = Ui.StyleRes("Tile"), Width = 330, Padding = new Thickness(6), Margin = new Thickness(0, 0, 14, 0), Child = _list };
         DockPanel.SetDock(left, Dock.Left);
         root.Children.Add(left);
         root.Children.Add(new ScrollViewer { Content = _detail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
@@ -62,7 +62,7 @@ public sealed class HistoryWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        Win32.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
+        UiTheme.StyleTitleBar(this);
     }
 
     private void UpdateRecordButton()
@@ -104,7 +104,7 @@ public sealed class HistoryWindow : Window
             var sp = new StackPanel();
             sp.Children.Add(new TextBlock { Text = label.ToUpperInvariant(), Foreground = Ui.Res("MutedBrush"), FontSize = 11, FontWeight = FontWeights.SemiBold });
             sp.Children.Add(new TextBlock { Text = value, FontSize = 20, FontWeight = FontWeights.SemiBold, FontFamily = new FontFamily("Bahnschrift, Segoe UI"), Foreground = Ui.Res(brushKey ?? "TextBrush"), Margin = new Thickness(0, 3, 0, 0) });
-            grid.Children.Add(new Border { Style = Ui.StyleRes("Card"), Margin = new Thickness(0, 0, 10, 10), Padding = new Thickness(14, 10, 14, 10), Child = sp });
+            grid.Children.Add(new Border { Style = Ui.StyleRes("Tile"), Margin = new Thickness(0, 0, 10, 10), Padding = new Thickness(14, 10, 14, 10), Child = sp });
         }
         static string N(double? v, string fmt, string unit = "") => v is double d ? d.ToString(fmt) + unit : "N/A";
         Stat("Duration", s.DurationText);
@@ -136,7 +136,7 @@ public sealed class HistoryWindow : Window
             var v = vals.ToArray();
             var valid = v.Where(x => !double.IsNaN(x)).ToList();
             var spark = new Sparkline { Height = 46, Margin = new Thickness(0, 4, 0, 0) };
-            spark.SetStyle(Ui.Res("AccentBrush"), new SolidColorBrush(Color.FromArgb(18, 255, 255, 255)), 1.5);
+            spark.SetStyle(Ui.Res("AccentBrush"), Ui.Res("GridLineBrush"), 1.5);
             double window = Math.Max(1, t.Length > 0 ? t[^1] : 1);
             spark.Loaded += (_, _) => spark.SetData(t, v, t.Length, window, window, max);
             var head2 = new DockPanel();

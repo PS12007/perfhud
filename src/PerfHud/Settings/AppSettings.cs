@@ -6,7 +6,8 @@ namespace PerfHud.Settings;
 /// <summary>Root of everything persisted to %APPDATA%\PerfHud\settings.json.</summary>
 public sealed class AppSettings : Observable
 {
-    public int Version { get; set; } = 1;
+    public const int CurrentVersion = 2;
+    public int Version { get; set; } = CurrentVersion;
     public GeneralSettings General { get; set; } = new();
     public AppearanceSettings Appearance { get; set; } = new();
     public HudSettings Hud { get; set; } = new();
@@ -41,6 +42,15 @@ public sealed class AppSettings : Observable
 
         Performance.SensorIntervalMs = Math.Clamp(Performance.SensorIntervalMs, 250, 10000);
         General.HudRefreshMs = Math.Clamp(General.HudRefreshMs, 100, 5000);
+        if (Version < 2)
+        {
+            // 2.0 redesign: move existing installs off the old black/cyan look onto the new defaults.
+            Appearance.ApplyTheme(ThemeDefinition.BuiltIn[0]);
+            HudLooks.Apply(HudLooks.All[0], Appearance);
+            Appearance.AppTheme = "Paper";
+        }
+        Version = CurrentVersion;
+
         Appearance.Scale = Math.Clamp(Appearance.Scale, 0.5, 3.0);
         Appearance.Opacity = Math.Clamp(Appearance.Opacity, 0.1, 1.0);
         Appearance.BackgroundOpacity = Math.Clamp(Appearance.BackgroundOpacity, 0.0, 1.0);
@@ -101,13 +111,58 @@ public sealed class GeneralSettings : Observable
 
 public sealed class AppearanceSettings : Observable
 {
-    private string _theme = "Midnight";
-    private string _bg = "#0A0D12", _panel = "#11161D", _accent = "#00D9FF", _success = "#42E88A",
-        _warning = "#FFC857", _hot = "#FF8C42", _danger = "#FF4D6D", _cool = "#4CC9F0", _text = "#F2F5F7", _muted = "#7C8795";
-    private double _bgOpacity = 0.80, _opacity = 1.0, _scale = 1.0, _fontScale = 1.0, _corner = 10, _anim = 1.0;
-    private string _labelFont = "Segoe UI", _valueFont = "Bahnschrift";
-    private bool _blur, _shadow = true, _border = true, _highContrast, _showIcons = true, _showLabels = true;
+    private string _theme = "Signal", _appTheme = "Paper", _look = "Instrument";
+    private string _bg = "#151412", _panel = "#1E1C19", _accent = "#FF6A2B", _success = "#A6D16B",
+        _warning = "#F2C14E", _hot = "#FF8B3D", _danger = "#FF4D3D", _cool = "#8FB8C9", _text = "#F3EFE7", _muted = "#8C867B";
+    private double _bgOpacity = 0.86, _opacity = 1.0, _scale = 1.0, _fontScale = 1.0, _corner = 2, _anim = 1.0;
+    private string _labelFont = "Segoe UI Semibold", _valueFont = "Bahnschrift";
+    private bool _blur, _shadow, _border = true, _highContrast, _showIcons, _showLabels = true;
     private ColorVisionMode _cvm;
+
+    private PanelStyle _panelStyle;
+    private PanelEdge _edge = PanelEdge.Left;
+    private string _borderColor = "";
+    private double _borderWidth = 1, _panelPadding = 9, _rowSpacing = 2.5, _colSpacing = 8, _barThickness = 4, _graphLine = 1.4;
+    private bool _textShadow, _showUnits = true, _colorBySeverity = true, _warnGlyph = true, _warnTags = true;
+    private BarStyle _barStyle = BarStyle.Segmented;
+    private GraphStyle _graphStyle = GraphStyle.Area;
+    private GaugeStyle _gaugeStyle = GaugeStyle.Half;
+    private LabelCase _labelCase = LabelCase.Upper;
+    private LabelPosition _labelPos;
+    private HeaderStyle _headerStyle = HeaderStyle.Tape;
+    private WeightOption _valueWeight = WeightOption.SemiBold, _labelWeight = WeightOption.Regular;
+
+    /// <summary>Palette of PerfHud's own windows (see UiTheme).</summary>
+    public string AppTheme { get => _appTheme; set => Set(ref _appTheme, value); }
+    /// <summary>Last applied HUD look preset (informational; every look setting stays individually editable).</summary>
+    public string Look { get => _look; set => Set(ref _look, value ?? ""); }
+
+    public PanelStyle PanelStyle { get => _panelStyle; set => Set(ref _panelStyle, value); }
+    /// <summary>Accent stripe along one edge of the panel.</summary>
+    public PanelEdge PanelEdge { get => _edge; set => Set(ref _edge, value); }
+    /// <summary>"" = automatic.</summary>
+    public string BorderColor { get => _borderColor; set => Set(ref _borderColor, value ?? ""); }
+    public double BorderWidth { get => _borderWidth; set => Set(ref _borderWidth, value); }
+    public double PanelPadding { get => _panelPadding; set => Set(ref _panelPadding, value); }
+    public double RowSpacing { get => _rowSpacing; set => Set(ref _rowSpacing, value); }
+    public double ColumnSpacing { get => _colSpacing; set => Set(ref _colSpacing, value); }
+    /// <summary>Halo behind text so it stays readable without a panel.</summary>
+    public bool TextShadow { get => _textShadow; set => Set(ref _textShadow, value); }
+    public BarStyle BarStyle { get => _barStyle; set => Set(ref _barStyle, value); }
+    public double BarThickness { get => _barThickness; set => Set(ref _barThickness, value); }
+    public GraphStyle GraphStyle { get => _graphStyle; set => Set(ref _graphStyle, value); }
+    public double GraphLineWidth { get => _graphLine; set => Set(ref _graphLine, value); }
+    public GaugeStyle GaugeStyle { get => _gaugeStyle; set => Set(ref _gaugeStyle, value); }
+    public LabelCase LabelCase { get => _labelCase; set => Set(ref _labelCase, value); }
+    public LabelPosition LabelPosition { get => _labelPos; set => Set(ref _labelPos, value); }
+    public HeaderStyle HeaderStyle { get => _headerStyle; set => Set(ref _headerStyle, value); }
+    public WeightOption ValueWeight { get => _valueWeight; set => Set(ref _valueWeight, value); }
+    public WeightOption LabelWeight { get => _labelWeight; set => Set(ref _labelWeight, value); }
+    public bool ShowUnits { get => _showUnits; set => Set(ref _showUnits, value); }
+    /// <summary>Off = only warm/hot/critical values are colored; everything else uses the text color.</summary>
+    public bool ColorBySeverity { get => _colorBySeverity; set => Set(ref _colorBySeverity, value); }
+    public bool ShowWarningGlyph { get => _warnGlyph; set => Set(ref _warnGlyph, value); }
+    public bool ShowWarningTags { get => _warnTags; set => Set(ref _warnTags, value); }
 
     public string ThemeName { get => _theme; set => Set(ref _theme, value); }
     public string Background { get => _bg; set => Set(ref _bg, value); }
