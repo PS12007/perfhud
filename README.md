@@ -26,13 +26,15 @@ monitoring engine. Native .NET 8 / WPF, no services, no injection, everything st
   borderless-fullscreen games. Fade in/out, position anywhere (anchors, per-monitor, follow active window, drag to move),
   scale, opacity, themes, compact/detailed, vertical/horizontal, hide-from-capture.
 * **Looks, not just colors** – six one-click HUD looks (*Instrument*, *Terminal*, *Float*, *Stacked*, *Outline*, *Soft*)
-  and nine palettes (*Signal*, *Paper*, *Bone*, *Amber*, *Phosphor*, *Mono*, *Clay*, *Moss*, *Classic*). Every part is
+  and fifteen palettes (*Signal*, *Paper*, *Bone*, *Amber*, *Phosphor*, *Mono*, *Clay*, *Moss*, *Sand*, *Rust*, *Plum*,
+  *Slate*, *Ochre*, *Tide*, *Classic*). Every part is
   tunable on its own: panel (solid / outline / none), accent edge, frame width & color, padding, text halo, label & value
   fonts and weights, label case (UPPER / Title / lower), labels beside or above values, units on/off, row & column
   spacing, bar style (segments / square / rounded / line) and thickness, graph style (area / line / columns) and line
   width, gauge style (half dial / arc / ring), section-header style (tape / underline / plain), state coloring and
   warning cues. The settings page shows a live preview over a stand-in game frame.
-* **App themes** – the settings, editor and history windows come in *Paper*, *Ink*, *Carbon* and *Moss*
+* **App themes** – the settings, editor and history windows come in *Paper*, *Ink*, *Linen*, *Sage*, *Carbon*, *Moss*,
+  *Slate* and *Plum*
   (switchable live; the title bar follows on Windows 11).
 * **Metrics** – FPS (current/avg/1%/0.1% lows, frame time + per-frame graph), CPU (total + per-thread load, effective
   clock, peak clock, package power, temperature), GPU (usage, temp, VRAM, power + limit, core/memory clock, fan,

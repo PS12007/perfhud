@@ -34,6 +34,22 @@ public static class UiTheme
             "#161A14", "#12150F", "#1D221A", "#20261C", "#1E231B", "#283022", "#303A29",
             "#2E3628", "#455040", "#E6EADB", "#889079", "#C9DA5A", "#161A0C",
             "#9CCB6B", "#E0B64E", "#E06A55", "#0F120D"),
+        new("Linen", "Soft sand, walnut brown, olive green", false,
+            "#EEE8DC", "#E4DCCC", "#F7F3EA", "#FFFDF8", "#F9F6EF", "#DFD6C4", "#D2C7B2",
+            "#D6CCB9", "#B3A68E", "#2A231A", "#7D715F", "#8A5A2B", "#FFFFFF",
+            "#5E7D3A", "#A87400", "#A8322A", "#E3DCCD"),
+        new("Sage", "Pale grey-green with a deep teal pen", false,
+            "#ECEFEA", "#E1E6DF", "#F6F8F4", "#FFFFFF", "#F8FAF6", "#DAE0D6", "#CDD5C8",
+            "#D2D9CD", "#AEB8A8", "#1B211C", "#6E786E", "#2F6B5E", "#FFFFFF",
+            "#3E7D3A", "#A07400", "#B3392E", "#E0E5DC"),
+        new("Slate", "Cool blue-grey with a parchment accent", true,
+            "#16191C", "#121417", "#1C2024", "#202529", "#1E2226", "#272C31", "#30363C",
+            "#2E343A", "#454D55", "#E6E9EC", "#858E97", "#E8D9B0", "#1A1710",
+            "#9BC28A", "#E2B45A", "#E05F55", "#101214"),
+        new("Plum", "Dusky aubergine with a rose accent", true,
+            "#1A141C", "#151017", "#211A24", "#251D28", "#231B26", "#2E2531", "#382D3B",
+            "#352B38", "#4D4150", "#EFE6EE", "#928393", "#D88FB0", "#1E0F16",
+            "#A8C98A", "#E6BE6A", "#E8606A", "#130E15"),
     };
 
     public static Palette Current { get; private set; } = All[0];
